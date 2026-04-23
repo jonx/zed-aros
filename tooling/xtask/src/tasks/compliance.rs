@@ -18,6 +18,10 @@ pub(crate) struct ComplianceArgs {
     mode: ComplianceMode,
 }
 
+const IGNORE_LIST: &[&str] = &[
+    "75fa566511e3ae7d03cfd76008512080291bd81d", // GitHub nuked this PR out of orbit
+];
+
 #[derive(Subcommand)]
 pub(crate) enum ComplianceMode {
     // Check compliance for all commits between two version tags
@@ -133,6 +137,10 @@ async fn check_compliance_impl(args: ComplianceArgs) -> Result<()> {
         summary.prs_with_errors()
     );
 
+    let all_errors_known = report.errors().all(|error| {
+        error.is_unknown_error() && IGNORE_LIST.contains(&error.commit.sha().as_str())
+    });
+
     for report in report.errors() {
         if let Some(pr_number) = report.commit.pr_number()
             && let Ok(pull_request) = client.get_pull_request(&Repository::ZED, pr_number).await
@@ -163,6 +171,14 @@ async fn check_compliance_impl(args: ComplianceArgs) -> Result<()> {
             "Compliance check failed, found {} commits not reviewed",
             summary.not_reviewed
         )),
+        ReportReviewSummary::MissingReviewsWithErrors if all_errors_known => {
+            println!(
+                "Compliance check failed with {} unreviewed commits, but all errors are known.",
+                summary.not_reviewed
+            );
+
+            Ok(())
+        }
         ReportReviewSummary::MissingReviewsWithErrors => Err(anyhow::anyhow!(
             "Compliance check failed with {} unreviewed commits and {} other issues",
             summary.not_reviewed,
