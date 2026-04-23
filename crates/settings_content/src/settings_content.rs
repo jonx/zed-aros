@@ -647,12 +647,6 @@ pub struct GitPanelSettingsContent {
     ///
     /// Default: false
     pub starts_open: Option<bool>,
-
-    /// Maximum length of the commit message title before a warning is shown.
-    /// Set to 0 to disable.
-    ///
-    /// Default: 72
-    pub commit_title_max_length: Option<usize>,
 }
 
 #[derive(
