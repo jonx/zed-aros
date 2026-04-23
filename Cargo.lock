@@ -10434,6 +10434,7 @@ dependencies = [
  "project",
  "settings",
  "tempfile",
+ "theme",
  "theme_settings",
  "ui",
  "urlencoding",
