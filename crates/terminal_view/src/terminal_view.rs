@@ -20,7 +20,7 @@ use persistence::TerminalDb;
 use project::{Project, ProjectEntryId, search::SearchQuery};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use settings::{Settings, SettingsStore, TerminalBlink, WorkingDirectory};
+use settings::{Settings, SettingsStore, TerminalBell, TerminalBlink, WorkingDirectory};
 use std::{
     any::Any,
     cmp,
@@ -1020,6 +1020,9 @@ fn subscribe_for_terminal_events(
 
                 Event::Bell => {
                     terminal_view.has_bell = true;
+                    if let TerminalBell::System = TerminalSettings::get_global(cx).bell {
+                        window.play_system_bell();
+                    }
                     cx.emit(Event::Wakeup);
                 }
 
