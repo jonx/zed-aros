@@ -1,7 +1,7 @@
 mod async_body;
 #[cfg(not(target_family = "wasm"))]
 pub mod github;
-#[cfg(not(target_family = "wasm"))]
+#[cfg(all(not(target_family = "wasm"), not(target_os = "aros")))]
 pub mod github_download;
 
 pub use anyhow::{Result, anyhow};

@@ -2,6 +2,21 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, fmt, path::Path, sync::LazyLock};
 
+// AROS (target_os = "aros") has no `which` crate support (it assumes a unix/
+// windows PATH-exe model); the only callers here are Windows shell-discovery
+// paths that never fire on AROS anyway, so stub them to "not found".
+#[cfg(target_os = "aros")]
+#[allow(dead_code)]
+mod which {
+    use std::path::PathBuf;
+    pub fn which(_: &str) -> Result<PathBuf, ()> {
+        Err(())
+    }
+    pub fn which_global(_: &str) -> Result<PathBuf, ()> {
+        Err(())
+    }
+}
+
 /// Shell configuration to open the terminal with.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, JsonSchema, Hash)]
 #[serde(rename_all = "snake_case")]
