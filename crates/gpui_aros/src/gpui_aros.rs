@@ -4,7 +4,9 @@
 //! `c/gpui_aros_glue.c`, a tiny-skia software rasterizer for the GPUI scene,
 //! and `gpui_wgpu::CosmicTextSystem` for text (OS-independent).
 
+mod atlas;
 mod dispatcher;
 mod display;
 mod glue;
+mod renderer;
 mod text;
