@@ -8,5 +8,9 @@ mod atlas;
 mod dispatcher;
 mod display;
 mod glue;
+mod platform;
 mod renderer;
 mod text;
+mod window;
+
+pub use platform::ArosPlatform;
