@@ -7813,6 +7813,7 @@ dependencies = [
  "anyhow",
  "cc",
  "collections",
+ "crossbeam-channel",
  "etagere",
  "futures 0.3.32",
  "gpui",
