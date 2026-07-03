@@ -1,17 +1,25 @@
+// These modules drive host subprocesses / archive extraction via `smol` (which
+// pulls the async-io reactor: polling -> rustix -> errno). AROS has no such
+// reactor and gpui core never uses them, so gate the whole group off there.
+#[cfg(not(target_os = "aros"))]
 pub mod archive;
+#[cfg(not(target_os = "aros"))]
 pub mod command;
 pub mod disambiguate;
 pub mod fs;
 pub mod markdown;
 pub mod path_list;
 pub mod paths;
+#[cfg(not(target_os = "aros"))]
 pub mod process;
 pub mod redact;
 pub mod rel_path;
 pub mod schemars;
 pub mod serde;
 pub mod shell;
+#[cfg(not(target_os = "aros"))]
 pub mod shell_builder;
+#[cfg(not(target_os = "aros"))]
 pub mod shell_env;
 pub mod size;
 #[cfg(any(test, feature = "test-support"))]

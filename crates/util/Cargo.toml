@@ -44,14 +44,16 @@ util_macros = { workspace = true, optional = true }
 gpui_util.workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-smol.workspace = true
 async-fs.workspace = true
 walkdir.workspace = true
-dirs.workspace = true
 
-# `which` assumes a unix/windows PATH-exe model; not available on AROS (its only
-# callers are Windows shell discovery, stubbed in shell.rs for target_os=aros).
+# `smol` pulls the async-io reactor (polling/rustix/errno), and `dirs`/`which`
+# assume a unix/windows model; none exist on AROS. Their only callers are the
+# process/archive/shell modules (gated off in util.rs for aros) and a HOME-based
+# path fallback (paths.rs), so keep them off the AROS graph entirely.
 [target.'cfg(all(not(target_family = "wasm"), not(target_os = "aros")))'.dependencies]
+smol.workspace = true
+dirs.workspace = true
 which.workspace = true
 
 [target.'cfg(unix)'.dependencies]

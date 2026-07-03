@@ -19,8 +19,17 @@ test-support = []
 async-task.workspace = true
 backtrace.workspace = true
 chrono.workspace = true
-flume = "0.11"
 futures.workspace = true
 parking_lot.workspace = true
 rand.workspace = true
 web-time.workspace = true
+
+# flume's default `eventual-fairness` feature pulls nanorand -> getrandom 0.2,
+# which has no AROS backend (getrandom 0.2 predates the `getrandom_backend`
+# cfg). scheduler only uses flume's channels, so on AROS take flume with just
+# `async`; every other target keeps the full default feature set unchanged.
+[target.'cfg(not(target_os = "aros"))'.dependencies]
+flume = "0.11"
+
+[target.'cfg(target_os = "aros")'.dependencies]
+flume = { version = "0.11", default-features = false, features = ["async"] }

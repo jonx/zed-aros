@@ -31,7 +31,17 @@ pub fn home_dir() -> &'static PathBuf {
                 PathBuf::from("/home/zed")
             }
         } else {
-            dirs::home_dir().expect("failed to determine home directory")
+            // AROS has no `dirs` backend; resolve $HOME directly.
+            #[cfg(target_os = "aros")]
+            {
+                std::env::var_os("HOME")
+                    .map(PathBuf::from)
+                    .expect("failed to determine home directory")
+            }
+            #[cfg(not(target_os = "aros"))]
+            {
+                dirs::home_dir().expect("failed to determine home directory")
+            }
         }
     })
 }
@@ -54,7 +64,9 @@ pub trait PathExt {
     where
         Self: From<&'a Path>,
     {
-        #[cfg(target_family = "wasm")]
+        // AROS is not `cfg(unix)` and its `OsStr` has no `from_bytes`; its paths
+        // are UTF-8, so decode like the wasm arm.
+        #[cfg(any(target_family = "wasm", target_os = "aros"))]
         {
             std::str::from_utf8(bytes)
                 .map(Path::new)
