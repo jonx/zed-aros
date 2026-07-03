@@ -7807,6 +7807,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui_aros"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc",
+ "collections",
+ "etagere",
+ "futures 0.3.32",
+ "gpui",
+ "gpui_wgpu",
+ "log",
+ "parking_lot",
+ "raw-window-handle",
+ "smallvec",
+ "tiny-skia",
+ "util",
+ "uuid",
+]
+
+[[package]]
 name = "gpui_linux"
 version = "0.1.0"
 dependencies = [
@@ -7919,6 +7939,7 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "gpui",
+ "gpui_aros",
  "gpui_linux",
  "gpui_macos",
  "gpui_web",

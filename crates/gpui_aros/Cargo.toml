@@ -1,0 +1,30 @@
+[package]
+name = "gpui_aros"
+version = "0.1.0"
+publish.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/gpui_aros.rs"
+
+[dependencies]
+gpui.workspace = true
+gpui_wgpu.workspace = true
+anyhow.workspace = true
+collections.workspace = true
+futures.workspace = true
+log.workspace = true
+parking_lot.workspace = true
+smallvec.workspace = true
+util.workspace = true
+uuid.workspace = true
+etagere = "0.2"
+raw-window-handle = "0.6"
+tiny-skia = "0.11"
+
+[build-dependencies]
+cc = "1"
