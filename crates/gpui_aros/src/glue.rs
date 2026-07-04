@@ -99,4 +99,15 @@ unsafe extern "C" {
     pub(crate) fn gpa_set_title(handle: *mut c_void, title: *const c_char);
 
     pub(crate) fn gpa_screen_size(out_w: *mut c_int, out_h: *mut c_int) -> c_int;
+
+    /// Record the main task + allocate the wake signal. Main thread, once,
+    /// before the run loop.
+    pub(crate) fn gpa_init_main();
+
+    /// The wake signal's mask (0 before `gpa_init_main`); OR it into the
+    /// run loop's park mask.
+    pub(crate) fn gpa_wake_sigmask() -> c_uint;
+
+    /// Nudge the run loop out of its park. Any thread; no-op before init.
+    pub(crate) fn gpa_wake_main();
 }

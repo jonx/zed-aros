@@ -52,6 +52,10 @@ pub struct ArosPlatform {
 
 impl ArosPlatform {
     pub fn new(headless: bool) -> Self {
+        // Record the main task + allocate the run-loop wake signal before
+        // any dispatcher thread exists that could try to Signal() it.
+        // SAFETY: FFI; platform creation happens on the main thread.
+        unsafe { crate::glue::gpa_init_main() };
         let dispatcher = Arc::new(ArosDispatcher::new());
         let background_executor = BackgroundExecutor::new(dispatcher.clone());
         let foreground_executor = ForegroundExecutor::new(dispatcher.clone());
@@ -131,8 +135,12 @@ impl Platform for ArosPlatform {
                 break;
             }
 
-            // Park on the union of window signal masks up to the frame budget.
-            let mask = windows.iter().fold(0u32, |acc, w| acc | w.sigmask());
+            // Park on the union of window signal masks — plus the dispatcher
+            // wake signal, so dispatch_on_main_thread cuts the park short —
+            // up to the frame budget.
+            let mask = windows.iter().fold(0u32, |acc, w| acc | w.sigmask())
+                // SAFETY: FFI; returns 0 before gpa_init_main.
+                | unsafe { crate::glue::gpa_wake_sigmask() };
             let elapsed = frame_start.elapsed();
             let budget = Duration::from_millis(FRAME_INTERVAL_MS as u64);
             let remaining = budget.saturating_sub(elapsed).as_millis() as i32;

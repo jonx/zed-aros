@@ -106,6 +106,33 @@ static void gpa_map_rawkey(struct IntuiMessage *im, int code, int qualifier,
         buf[0] = 0;
 }
 
+/* Main-task wakeup: the run loop parks in gpa_wait_timeout_ms; the
+ * dispatcher's worker/timer threads (AROS tasks on the hosted port) nudge it
+ * with a dedicated exec signal so main-thread work starts within the poll
+ * granularity (~2 ms) instead of the frame budget (~33 ms). */
+static struct Task *gpa_main_task;
+static LONG gpa_wake_sigbit = -1;
+
+/* Called once from the platform's main thread before the run loop starts. */
+void gpa_init_main(void)
+{
+    gpa_main_task = FindTask(NULL);
+    if (gpa_wake_sigbit < 0)
+        gpa_wake_sigbit = AllocSignal(-1);
+}
+
+unsigned gpa_wake_sigmask(void)
+{
+    return gpa_wake_sigbit >= 0 ? (1u << gpa_wake_sigbit) : 0;
+}
+
+/* Callable from any task/thread; no-op before gpa_init_main. */
+void gpa_wake_main(void)
+{
+    if (gpa_main_task && gpa_wake_sigbit >= 0)
+        Signal(gpa_main_task, 1u << gpa_wake_sigbit);
+}
+
 static char *gpa_strdup(const char *s)
 {
     if (!s)

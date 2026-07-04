@@ -13,6 +13,8 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use gpui::{PlatformDispatcher, Priority, RunnableVariant};
 use parking_lot::Mutex;
 
+use crate::glue;
+
 const MIN_THREADS: usize = 2;
 
 pub(crate) struct ArosDispatcher {
@@ -75,9 +77,11 @@ impl PlatformDispatcher for ArosDispatcher {
     }
 
     fn dispatch_on_main_thread(&self, runnable: RunnableVariant, _priority: Priority) {
-        // TODO: wake the run loop via a gpa signal instead of relying on the
-        // ~30fps poll; correctness holds because the loop drains every frame.
         self.main_queue.lock().push_back(runnable);
+        // Nudge the run loop out of its park so the work starts within the
+        // poll granularity (~2 ms) instead of the frame budget. Safe from
+        // any thread (hosted-AROS threads are exec tasks); no-op pre-init.
+        unsafe { glue::gpa_wake_main() };
     }
 
     fn dispatch_after(&self, duration: Duration, runnable: RunnableVariant) {
@@ -87,6 +91,8 @@ impl PlatformDispatcher for ArosDispatcher {
             .spawn(move || {
                 thread::sleep(duration);
                 main_queue.lock().push_back(runnable);
+                // SAFETY: see dispatch_on_main_thread.
+                unsafe { glue::gpa_wake_main() };
             })
             .expect("failed to spawn gpui_aros timer thread");
     }
