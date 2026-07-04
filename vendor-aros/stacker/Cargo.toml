@@ -75,3 +75,9 @@ features = [
     "Win32_System_Threading",
     "Win32_Foundation",
 ]
+
+# Vendored addition: "aros" is a custom-JSON target; register its target_os
+# value so host builds don't warn on the added cfg arms.
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = ['cfg(target_os, values("aros"))']

@@ -32,9 +32,8 @@ use futures::StreamExt as _;
 // e.g. render_to_image for headless screenshots — works unchanged).
 #[cfg(not(target_os = "aros"))]
 use proptest::prelude::{Just, Strategy, any};
-#[cfg(not(target_os = "aros"))]
-use std::env;
 use std::{
+    env,
     panic::{self, RefUnwindSafe, UnwindSafe},
     pin::Pin,
 };
