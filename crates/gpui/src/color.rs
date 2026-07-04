@@ -917,6 +917,18 @@ impl Background {
         }
     }
 
+    /// Returns the CSS angle (degrees, 0 pointing up, clockwise) and the two
+    /// color stops if this is a linear gradient, None otherwise. Lets
+    /// out-of-tree renderers (which can't read the pub(crate) fields the GPU
+    /// backends memcpy into shader uniforms) paint gradients.
+    pub fn as_linear_gradient(&self) -> Option<(f32, [LinearColorStop; 2])> {
+        if self.tag == BackgroundTag::LinearGradient {
+            Some((self.gradient_angle_or_pattern_height, self.colors))
+        } else {
+            None
+        }
+    }
+
     /// Use specified color space for color interpolation.
     ///
     /// <https://developer.mozilla.org/en-US/docs/Web/CSS/color-interpolation-method>

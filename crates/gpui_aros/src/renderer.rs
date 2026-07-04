@@ -1,15 +1,15 @@
 //! tiny-skia CPU renderer for the GPUI scene.
 //!
-//! Real handling for solid Quads (rounded corners + borders),
-//! MonochromeSprites (glyphs: atlas alpha tinted by color), PolychromeSprites
-//! (images: premultiplied BGRA atlas tiles, with opacity/grayscale and
-//! rounded-corner clipping), Paths (pre-tessellated triangles), Underlines
-//! (straight + wavy), and drop Shadows (layered-ring blur approximation) —
-//! all clipped to the primitive's content mask. Remaining TODO no-ops:
-//! gradient backgrounds (`Background`'s stops are pub(crate); needs a small
-//! gpui accessor), inset shadows, and Surfaces (mac-only video frames, never
-//! emitted here). Subpixel rendering is reported unsupported, so GPUI never
-//! emits SubpixelSprites.
+//! Real handling for Quads (rounded corners + borders, solid or linear-
+//! gradient fills), MonochromeSprites (glyphs: atlas alpha tinted by color),
+//! PolychromeSprites (images: premultiplied BGRA atlas tiles, with
+//! opacity/grayscale and rounded-corner clipping), Paths (pre-tessellated
+//! triangles, solid or gradient), Underlines (straight + wavy), and drop
+//! Shadows (layered-ring blur approximation) — all clipped to the
+//! primitive's content mask. Remaining TODO no-ops: pattern fills
+//! (slash/checkerboard), inset shadows, and Surfaces (mac-only video frames,
+//! never emitted here). Subpixel rendering is reported unsupported, so GPUI
+//! never emits SubpixelSprites.
 
 use std::sync::Arc;
 
@@ -116,23 +116,21 @@ impl CpuRenderer {
         self.update_clip(&quad.content_mask);
         let mask = self.clip_mask.as_ref();
 
-        // Background fill (solid only; gradients are TODO).
-        if let Some(color) = quad.background.as_solid() {
-            if !color.is_transparent() {
-                let paint = solid_paint(color);
-                if is_square(&quad.corner_radii) {
-                    if let Some(rect) = to_rect(&bounds) {
-                        self.pixmap.fill_rect(rect, &paint, Transform::identity(), mask);
-                    }
-                } else if let Some(path) = rounded_rect_path(&bounds, &quad.corner_radii) {
-                    self.pixmap.fill_path(
-                        &path,
-                        &paint,
-                        FillRule::Winding,
-                        Transform::identity(),
-                        mask,
-                    );
+        // Background fill: solid or two-stop linear gradient. Patterns
+        // (slash/checkerboard) have no accessor yet and stay TODO.
+        if let Some(paint) = background_paint(&quad.background, &bounds) {
+            if is_square(&quad.corner_radii) {
+                if let Some(rect) = to_rect(&bounds) {
+                    self.pixmap.fill_rect(rect, &paint, Transform::identity(), mask);
                 }
+            } else if let Some(path) = rounded_rect_path(&bounds, &quad.corner_radii) {
+                self.pixmap.fill_path(
+                    &path,
+                    &paint,
+                    FillRule::Winding,
+                    Transform::identity(),
+                    mask,
+                );
             }
         }
 
@@ -319,13 +317,12 @@ impl CpuRenderer {
     /// Anti-aliasing stays off for the same reason — edge AA would show
     /// seams between adjacent triangles instead of a smooth silhouette.
     fn draw_path(&mut self, path: &gpui::Path<ScaledPixels>) {
-        // Gradient fills need gpui to expose the stops (see module doc).
-        let Some(color) = path.color.as_solid() else {
-            return;
-        };
-        if color.is_transparent() || path.vertices.is_empty() {
+        if path.vertices.is_empty() {
             return;
         }
+        let Some(mut paint) = background_paint(&path.color, &path.bounds) else {
+            return;
+        };
         let mut pb = PathBuilder::new();
         for tri in path.vertices.chunks_exact(3) {
             pb.move_to(tri[0].xy_position.x.0, tri[0].xy_position.y.0);
@@ -338,7 +335,6 @@ impl CpuRenderer {
         };
         self.update_clip(&path.content_mask);
         let mask = self.clip_mask.as_ref();
-        let mut paint = solid_paint(color);
         paint.anti_alias = false;
         self.pixmap
             .fill_path(&skia_path, &paint, FillRule::Winding, Transform::identity(), mask);
@@ -593,6 +589,70 @@ fn rounded_rect_path(
     }
     pb.close();
     pb.finish()
+}
+
+/// A tiny-skia paint for a gpui `Background`: solid colors and two-stop
+/// linear gradients (interpolated in sRGB — the Oklab color-space option is
+/// approximated by sRGB, acceptable for the subtle UI fades gpui uses).
+/// `None` for fully transparent fills and the pattern tags (slash /
+/// checkerboard: no public accessor yet, and unused by app chrome).
+fn background_paint<'a>(
+    background: &gpui::Background,
+    bounds: &Bounds<ScaledPixels>,
+) -> Option<Paint<'a>> {
+    if let Some(color) = background.as_solid() {
+        if color.is_transparent() {
+            return None;
+        }
+        return Some(solid_paint(color));
+    }
+    let (angle_deg, stops) = background.as_linear_gradient()?;
+
+    // CSS convention: 0deg points up, angles run clockwise. The gradient
+    // line passes through the box center; its half-length is the projection
+    // of the half-extent onto the direction (the CSS gradient-line length),
+    // so the first/last stops land exactly on the box corners' shadow.
+    let theta = angle_deg.to_radians();
+    let (dx, dy) = (theta.sin(), -theta.cos());
+    let w = bounds.size.width.0;
+    let h = bounds.size.height.0;
+    if w <= 0.0 || h <= 0.0 {
+        return None;
+    }
+    let cx = bounds.origin.x.0 + w / 2.0;
+    let cy = bounds.origin.y.0 + h / 2.0;
+    let half_len = (w * dx.abs() + h * dy.abs()) / 2.0;
+
+    let to_color = |hsla: Hsla| {
+        let rgba: Rgba = hsla.into();
+        Color::from_rgba(
+            rgba.r.clamp(0.0, 1.0),
+            rgba.g.clamp(0.0, 1.0),
+            rgba.b.clamp(0.0, 1.0),
+            rgba.a.clamp(0.0, 1.0),
+        )
+        .unwrap_or(Color::TRANSPARENT)
+    };
+    let shader = tiny_skia::LinearGradient::new(
+        tiny_skia::Point::from_xy(cx - dx * half_len, cy - dy * half_len),
+        tiny_skia::Point::from_xy(cx + dx * half_len, cy + dy * half_len),
+        vec![
+            tiny_skia::GradientStop::new(
+                stops[0].percentage.clamp(0.0, 1.0),
+                to_color(stops[0].color),
+            ),
+            tiny_skia::GradientStop::new(
+                stops[1].percentage.clamp(0.0, 1.0),
+                to_color(stops[1].color),
+            ),
+        ],
+        tiny_skia::SpreadMode::Pad,
+        Transform::identity(),
+    )?;
+    let mut paint = Paint::default();
+    paint.shader = shader;
+    paint.anti_alias = true;
+    Some(paint)
 }
 
 fn solid_paint<'a>(color: Hsla) -> Paint<'a> {
