@@ -37,36 +37,6 @@ pub(crate) const GPA_BUTTON_LEFT: c_int = 0;
 pub(crate) const GPA_BUTTON_RIGHT: c_int = 1;
 pub(crate) const GPA_BUTTON_MIDDLE: c_int = 2;
 
-// -- Rawkey constants (devices/inputevent.h + devices/rawkeycodes.h) --------
-// Mirrored here rather than bound: they are stable Amiga ABI, fixed since
-// the 1.x days, and AROS's virtual rawkey set is MorphOS-compatible.
-
-/// `IECODE_UP_PREFIX`: set in `GpaEvent::code` for key releases.
-pub(crate) const IECODE_UP_PREFIX: c_int = 0x80;
-
-/// `IEQUALIFIER_*` bits carried in `GpaEvent::qualifier`.
-pub(crate) const IEQUALIFIER_LSHIFT: c_int = 1 << 0;
-pub(crate) const IEQUALIFIER_RSHIFT: c_int = 1 << 1;
-pub(crate) const IEQUALIFIER_CAPSLOCK: c_int = 1 << 2;
-pub(crate) const IEQUALIFIER_CONTROL: c_int = 1 << 3;
-pub(crate) const IEQUALIFIER_LALT: c_int = 1 << 4;
-pub(crate) const IEQUALIFIER_RALT: c_int = 1 << 5;
-pub(crate) const IEQUALIFIER_LCOMMAND: c_int = 1 << 6;
-pub(crate) const IEQUALIFIER_RCOMMAND: c_int = 1 << 7;
-pub(crate) const IEQUALIFIER_REPEAT: c_int = 1 << 9;
-
-/// The modifier keys' own rawkey codes (LSHIFT..RAMIGA) — state-only, they
-/// update `Modifiers` but never emit a Key event.
-pub(crate) const RAWKEY_MODIFIER_FIRST: c_int = 0x60;
-pub(crate) const RAWKEY_MODIFIER_LAST: c_int = 0x67;
-
-/// NewMouse standard: the scroll wheel arrives as rawkey codes.
-pub(crate) const RAWKEY_NM_WHEEL_UP: c_int = 0x7A;
-pub(crate) const RAWKEY_NM_WHEEL_DOWN: c_int = 0x7B;
-pub(crate) const RAWKEY_NM_WHEEL_LEFT: c_int = 0x7C;
-pub(crate) const RAWKEY_NM_WHEEL_RIGHT: c_int = 0x7D;
-pub(crate) const RAWKEY_NM_BUTTON_FOURTH: c_int = 0x7E;
-
 unsafe extern "C" {
     pub(crate) fn gpa_open_window(
         x: c_int,

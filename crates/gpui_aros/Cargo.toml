@@ -11,21 +11,27 @@ workspace = true
 [lib]
 path = "src/gpui_aros.rs"
 
+# Host-compilable core (atlas / renderer / input) — the porting
+# conformance suite runs these under plain `cargo test -p gpui_aros`
+# on any host (see PORTING.md).
 [dependencies]
 gpui.workspace = true
-gpui_wgpu.workspace = true
 anyhow.workspace = true
 collections.workspace = true
+etagere = "0.2"
+parking_lot.workspace = true
+tiny-skia = "0.11"
+
+# AROS-only shell (window / platform / dispatcher / text).
+[target.'cfg(target_os = "aros")'.dependencies]
+gpui_wgpu.workspace = true
 crossbeam-channel = "0.5"
 futures.workspace = true
 log.workspace = true
-parking_lot.workspace = true
 smallvec.workspace = true
 util.workspace = true
 uuid.workspace = true
-etagere = "0.2"
 raw-window-handle = "0.6"
-tiny-skia = "0.11"
 
 [build-dependencies]
 cc = "1"

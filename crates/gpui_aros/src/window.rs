@@ -19,6 +19,7 @@ use raw_window_handle::{
 };
 
 use crate::glue::{self, GpaEvent};
+use crate::input::{self, key_name, latin1_to_string, modifiers_from_qualifier};
 use crate::renderer::CpuRenderer;
 
 #[derive(Default)]
@@ -227,15 +228,15 @@ impl ArosWindowInner {
     /// (`base_chars` = unmodified key for the binding name, `chars` = the
     /// typed characters).
     fn handle_rawkey(&self, event: &GpaEvent) {
-        let is_up = event.code & glue::IECODE_UP_PREFIX != 0;
-        let down_code = event.code & !glue::IECODE_UP_PREFIX;
+        let is_up = event.code & input::IECODE_UP_PREFIX != 0;
+        let down_code = event.code & !input::IECODE_UP_PREFIX;
         let qualifier = event.qualifier;
 
         // Qualifiers are authoritative per message — derive the full
         // modifier state from them and report transitions, exactly once.
         let modifiers = modifiers_from_qualifier(qualifier);
         let capslock = Capslock {
-            on: qualifier & glue::IEQUALIFIER_CAPSLOCK != 0,
+            on: qualifier & input::IEQUALIFIER_CAPSLOCK != 0,
         };
         let (changed, position) = {
             let mut state = self.state.borrow_mut();
@@ -255,12 +256,12 @@ impl ArosWindowInner {
         // Wheel-away-from-user scrolls up = positive y lines (the gpui
         // convention shared by the Windows/Linux backends); left mirrors
         // that as positive x. Releases of these codes are noise.
-        if (glue::RAWKEY_NM_WHEEL_UP..=glue::RAWKEY_NM_BUTTON_FOURTH).contains(&down_code) {
+        if (input::RAWKEY_NM_WHEEL_UP..=input::RAWKEY_NM_BUTTON_FOURTH).contains(&down_code) {
             let lines = match down_code {
-                glue::RAWKEY_NM_WHEEL_UP => Point { x: 0.0, y: 1.0 },
-                glue::RAWKEY_NM_WHEEL_DOWN => Point { x: 0.0, y: -1.0 },
-                glue::RAWKEY_NM_WHEEL_LEFT => Point { x: 1.0, y: 0.0 },
-                glue::RAWKEY_NM_WHEEL_RIGHT => Point { x: -1.0, y: 0.0 },
+                input::RAWKEY_NM_WHEEL_UP => Point { x: 0.0, y: 1.0 },
+                input::RAWKEY_NM_WHEEL_DOWN => Point { x: 0.0, y: -1.0 },
+                input::RAWKEY_NM_WHEEL_LEFT => Point { x: 1.0, y: 0.0 },
+                input::RAWKEY_NM_WHEEL_RIGHT => Point { x: -1.0, y: 0.0 },
                 _ => return, // fourth button etc. — not a wheel, not a key
             };
             if !is_up {
@@ -275,7 +276,7 @@ impl ArosWindowInner {
         }
 
         // The modifier keys themselves only feed the state above.
-        if (glue::RAWKEY_MODIFIER_FIRST..=glue::RAWKEY_MODIFIER_LAST).contains(&down_code) {
+        if (input::RAWKEY_MODIFIER_FIRST..=input::RAWKEY_MODIFIER_LAST).contains(&down_code) {
             return;
         }
 
@@ -304,7 +305,7 @@ impl ArosWindowInner {
         } else {
             self.fire_input(PlatformInput::KeyDown(KeyDownEvent {
                 keystroke,
-                is_held: qualifier & glue::IEQUALIFIER_REPEAT != 0,
+                is_held: qualifier & input::IEQUALIFIER_REPEAT != 0,
                 prefer_character_input: false,
             }));
         }
@@ -381,80 +382,6 @@ fn map_button(code: c_int) -> MouseButton {
         glue::GPA_BUTTON_MIDDLE => MouseButton::Middle,
         glue::GPA_BUTTON_LEFT | _ => MouseButton::Left,
     }
-}
-
-/// GPUI modifiers from Amiga `IEQUALIFIER_*` bits. The Amiga/Command keys
-/// map to `platform` (like Cmd on macOS / Win on Windows); Ctrl chords stay
-/// the primary accelerator since `Keystroke::parse("secondary-…")` resolves
-/// to Ctrl off-macOS.
-fn modifiers_from_qualifier(qualifier: c_int) -> Modifiers {
-    Modifiers {
-        shift: qualifier & (glue::IEQUALIFIER_LSHIFT | glue::IEQUALIFIER_RSHIFT) != 0,
-        control: qualifier & glue::IEQUALIFIER_CONTROL != 0,
-        alt: qualifier & (glue::IEQUALIFIER_LALT | glue::IEQUALIFIER_RALT) != 0,
-        platform: qualifier & (glue::IEQUALIFIER_LCOMMAND | glue::IEQUALIFIER_RCOMMAND) != 0,
-        function: false,
-    }
-}
-
-/// The NUL-terminated ISO-8859-1 bytes from the C glue as a `String`.
-/// Latin-1 maps 1:1 onto the first 256 Unicode scalars, so `u8 as char` is
-/// the whole conversion. `None` when empty (unmapped / dead key pending).
-fn latin1_to_string(bytes: &[u8]) -> Option<String> {
-    let len = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-    if len == 0 {
-        return None;
-    }
-    Some(bytes[..len].iter().map(|&b| b as char).collect())
-}
-
-/// The GPUI keybinding name for a rawkey code: named keys from the (stable
-/// Amiga) code table, everything else from the keymap's unmodified
-/// translation — so a French layout's `a` binds as "a" even though the code
-/// is RAWKEY_Q. Names match the other backends' vocabulary ("enter",
-/// "pageup", …) so existing keymaps work unchanged.
-fn key_name(down_code: c_int, base_chars: &[u8]) -> Option<String> {
-    let named = match down_code {
-        0x40 => Some("space"),
-        0x41 => Some("backspace"),
-        0x42 => Some("tab"),
-        0x43 | 0x44 => Some("enter"), // keypad enter / return
-        0x45 => Some("escape"),
-        0x46 => Some("delete"),
-        0x47 => Some("insert"),
-        0x48 => Some("pageup"),
-        0x49 => Some("pagedown"),
-        0x4A => None, // keypad minus — fall through to the keymap chars
-        0x4B => Some("f11"),
-        0x4C => Some("up"),
-        0x4D => Some("down"),
-        0x4E => Some("right"),
-        0x4F => Some("left"),
-        0x50 => Some("f1"),
-        0x51 => Some("f2"),
-        0x52 => Some("f3"),
-        0x53 => Some("f4"),
-        0x54 => Some("f5"),
-        0x55 => Some("f6"),
-        0x56 => Some("f7"),
-        0x57 => Some("f8"),
-        0x58 => Some("f9"),
-        0x59 => Some("f10"),
-        0x5F => Some("help"),
-        0x6F => Some("f12"),
-        _ => None,
-    };
-    if let Some(name) = named {
-        return Some(name.to_string());
-    }
-    // Printables: the unmodified keymap translation, lowercased so the
-    // capslock state can't change the binding identity.
-    let base = latin1_to_string(base_chars)?;
-    let trimmed: String = base.chars().filter(|c| !c.is_control()).collect();
-    if trimmed.is_empty() {
-        return None;
-    }
-    Some(trimmed.to_lowercase())
 }
 
 impl HasWindowHandle for ArosWindow {

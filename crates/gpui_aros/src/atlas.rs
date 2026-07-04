@@ -4,6 +4,10 @@
 //! (Monochrome = 1 byte/px alpha coverage, Polychrome/Subpixel = 4 byte/px
 //! RGBA) so the tiny-skia renderer can sample tiles directly.
 
+// Off-AROS these are only reached from the conformance tests — the
+// window/platform shell that drives them in production is cfg-gated.
+#![cfg_attr(not(target_os = "aros"), allow(dead_code))]
+
 use anyhow::{Context as _, Result};
 use collections::FxHashMap;
 use etagere::{BucketedAtlasAllocator, size2};

@@ -11,6 +11,10 @@
 //! never emitted here). Subpixel rendering is reported unsupported, so GPUI
 //! never emits SubpixelSprites.
 
+// Off-AROS these are only reached from the conformance tests — the
+// window/platform shell that drives them in production is cfg-gated.
+#![cfg_attr(not(target_os = "aros"), allow(dead_code))]
+
 use std::sync::Arc;
 
 use gpui::{
@@ -45,6 +49,22 @@ impl CpuRenderer {
 
     pub(crate) fn sprite_atlas(&self) -> Arc<CpuAtlas> {
         self.atlas.clone()
+    }
+
+    // -- Test hooks (porting conformance suite; see conformance.rs) ------
+    #[cfg(test)]
+    pub(crate) fn sprite_atlas_concrete(&self) -> Arc<CpuAtlas> {
+        self.atlas.clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn draw_monochrome_sprite_for_test(&mut self, s: &gpui::MonochromeSprite) {
+        self.draw_monochrome_sprite(s);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn draw_quad_for_test(&mut self, q: &Quad) {
+        self.draw_quad(q);
     }
 
     pub(crate) fn update_drawable_size(&mut self, size: Size<DevicePixels>) {
