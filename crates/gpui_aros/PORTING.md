@@ -53,8 +53,28 @@ Run on booted AROS via `graft/aros-ctl` (see `gpui_aros_smoke`):
 - [ ] **LoadSeg scale**: strip the binary (`llvm-strip --strip-debug`) —
       a debug-info ET_REL takes minutes to relocate; and never boot with
       a `-DDEBUG` dos.library for real runs (it logs every packet).
-- [ ] Clipboard round-trip (`aros-ctl cmdc/cmdv` once wired), window
-      resize via the size gadget, scroll wheel (NewMouse rawkeys).
+- [ ] Clipboard round-trip (`aros-ctl cmdc/cmdv` once wired).
+- [ ] **Window resize** via the size gadget: `graft/resize-smoke` proves
+      the drag recipe on the boot CLI window (grab the gadget, MULTIPLE
+      intermediate `mouse` moves while held); driving an app window's
+      gadget by injected coordinates was inconclusive on 2026-07-04 —
+      needs precise frame coords or a programmatic `gpa_set_size`.
+- [ ] **Scroll wheel**: not injectable today — cocoametal's control
+      protocol has no wheel event (CM_EV_*), so NewMouse rawkeys
+      (0x7A-0x7D) never fire under automation. Host-side, the mapping
+      constants are pinned by the conformance tests; end-to-end needs a
+      CM_EV_WHEEL in the host shim.
+- [ ] `aros-ctl key` VK coverage: page-up/down (mac VK 116/121) did not
+      reach the app on 2026-07-04 — extend cocoametal's VK→rawkey table
+      when nav-key automation is needed.
+
+## Cross-platform bugs the port has exposed upstream/in the app
+
+- Feraille typeahead gated focus with `FocusHandle::is_focused` (exact
+  match) instead of `contains_focused`: clicking a row moves window focus
+  to the table's inner handle, silently disabling typeahead after any
+  click — on every platform. Caught because AROS testing clicks before
+  typing (fixed in Feraille, 2026-07-04).
 
 ## Running
 
