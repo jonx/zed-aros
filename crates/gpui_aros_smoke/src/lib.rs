@@ -5,12 +5,23 @@
 //!
 //! Linked as a staticlib into an AROS C: command by `link-aros.sh`; the C
 //! harness (`c/smoke_main.c`) owns AROS startup and calls
-//! [`aros_gpui_smoke_main`]. Drive it under `graft/aros-ctl`:
+//! [`aros_gpui_smoke_main`].
+//!
+//! **Stack: 16 MB, non-negotiable.** AROS shells launch commands with tens
+//! of KB of stack; gpui's dispatch/layout recursion blows straight through
+//! that, and in AROS's single address space the overflow corrupts
+//! neighboring allocations — crashing *other* tasks (emul-handler,
+//! graphics.library) with wild NULL-offset faults long before anything
+//! points back here. `Stack 16000000` in the launching shell (see
+//! `gpui-smoke.startup`) fixes it; field-diagnosed 2026-07-04.
+//!
+//! Proven run recipe (window + keyboard echo, screenshot proof):
 //!
 //! ```sh
 //! crates/gpui_aros_smoke/link-aros.sh     # build + link + deploy C:GpuiSmoke
-//! graft/aros-ctl run; graft/aros-ctl type "c:gpuismoke"; graft/aros-ctl enter
-//! graft/aros-ctl shot smoke.png
+//! cd ~/Source/aros-aarch64
+//! AROS_CTL_STARTUP_FILE=.../gpui-smoke.startup graft/aros-ctl run
+//! graft/aros-ctl type "hello"; graft/aros-ctl shot smoke.png
 //! ```
 
 use gpui::{

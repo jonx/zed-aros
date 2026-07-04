@@ -97,9 +97,14 @@ static void gpa_map_rawkey(struct IntuiMessage *im, int code, int qualifier,
     ie.ie_Class = IECLASS_RAWKEY;
     ie.ie_Code = code;
     ie.ie_Qualifier = qualifier;
-    /* For IDCMP_RAWKEY, IAddress points at a pointer to the previous key's
-     * codes — the dead-key context MapRawKey needs (e.g. alt-e then e). */
-    ie.ie_EventAddress = im->IAddress ? *((APTR *)im->IAddress) : NULL;
+    /* Classic Amiga lore says IAddress points at a pointer to the previous
+     * key's codes (the dead-key context). On this AROS the injected-input
+     * path (cocoametal control FIFO -> keyboard HIDD) delivers RAWKEY
+     * messages whose IAddress is NOT a dereferenceable pointer — chasing it
+     * crashed in the field (fault addr 0x28). Dead-key composition is not
+     * worth a crash: translate without the context. */
+    ie.ie_EventAddress = NULL;
+    (void)im;
 
     LONG n = MapRawKey(&ie, (STRPTR)buf, buf_len - 1, NULL);
     if (n > 0)
@@ -270,6 +275,7 @@ int gpa_poll_event(void *handle, GpaEvent *out)
             }
             break;
         case IDCMP_RAWKEY: {
+            
             kind = GPA_EVENT_RAWKEY;
             /* Map while the message (and its IAddress dead-key context) is
              * still valid — ReplyMsg comes right after this switch. Key-ups
