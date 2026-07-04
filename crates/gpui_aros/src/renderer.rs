@@ -190,17 +190,45 @@ impl CpuRenderer {
 
         self.update_clip(&sprite.content_mask);
         let mask = self.clip_mask.as_ref();
-        let x = sprite.bounds.origin.x.0.round() as i32;
-        let y = sprite.bounds.origin.y.0.round() as i32;
+        // The GPU backends *sample* the tile into the layout bounds; blit
+        // 1:1 only when they match (glyphs — keeps text pixel-crisp) and
+        // scale otherwise. SVGs are rasterized at 2× the layout size
+        // (gpui's SMOOTH_SVG_SCALE_FACTOR) precisely so this downsample
+        // smooths them — drawing them unscaled painted icons at double
+        // size, clipped by the content mask.
+        let dst_w = sprite.bounds.size.width.0;
+        let dst_h = sprite.bounds.size.height.0;
+        if dst_w <= 0.0 || dst_h <= 0.0 {
+            return;
+        }
+        let sx = dst_w / tile.width as f32;
+        let sy = dst_h / tile.height as f32;
+        let x = sprite.bounds.origin.x.0;
+        let y = sprite.bounds.origin.y.0;
         // TODO: honor sprite.transformation (glyphs are axis-aligned in practice).
-        self.pixmap.draw_pixmap(
-            x,
-            y,
-            sprite_pixmap.as_ref(),
-            &PixmapPaint::default(),
-            Transform::identity(),
-            mask,
-        );
+        if (sx - 1.0).abs() < 0.001 && (sy - 1.0).abs() < 0.001 {
+            self.pixmap.draw_pixmap(
+                x.round() as i32,
+                y.round() as i32,
+                sprite_pixmap.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                mask,
+            );
+        } else {
+            let paint = PixmapPaint {
+                quality: FilterQuality::Bilinear,
+                ..PixmapPaint::default()
+            };
+            self.pixmap.draw_pixmap(
+                0,
+                0,
+                sprite_pixmap.as_ref(),
+                &paint,
+                Transform::from_scale(sx, sy).post_translate(x, y),
+                mask,
+            );
+        }
     }
 
     /// Images: premultiplied BGRA atlas tiles blitted (scaled when the layout
