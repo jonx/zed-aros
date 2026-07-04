@@ -46,7 +46,11 @@ fn main() {
 
     // CC / CFLAGS come from the workspace .cargo/config.toml (host clang, ELF
     // triple, large code model, x18 reserved, AROS SDK include paths).
+    // -Wno-pointer-sign matches the AROS C convention (STRPTR is unsigned
+    // char*; string literals are plain char*) — same flag the hosted/rust
+    // build scripts pass.
     cc::Build::new()
         .file("c/gpui_aros_glue.c")
+        .flag("-Wno-pointer-sign")
         .compile("gpui_aros_glue");
 }
