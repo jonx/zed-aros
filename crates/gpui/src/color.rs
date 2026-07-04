@@ -345,7 +345,7 @@ pub struct Hsla {
     pub a: f32,
 }
 
-#[cfg(feature = "proptest")]
+#[cfg(all(feature = "proptest", not(target_os = "aros")))]
 mod property {
     use super::Hsla;
     use proptest::prelude::*;

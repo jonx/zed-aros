@@ -71,7 +71,6 @@ num_cpus = "1.13"
 parking = "2.0.0"
 parking_lot.workspace = true
 postage.workspace = true
-proptest = { workspace = true, optional = true }
 chrono.workspace = true
 profiling.workspace = true
 rand.workspace = true
@@ -111,6 +110,11 @@ url.workspace = true
 uuid.workspace = true
 web-time.workspace = true
 heapless.workspace = true
+
+# proptest's rusty-fork/wait-timeout deps have no AROS arm; the property_test
+# machinery is cfg-gated off there (src/test.rs), so the dep is too.
+[target.'cfg(not(target_os = "aros"))'.dependencies]
+proptest = { workspace = true, optional = true }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 getrandom = { version = "0.3.4", features = ["wasm_js"] }
