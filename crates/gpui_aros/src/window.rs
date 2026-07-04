@@ -7,11 +7,12 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui::{
-    AnyWindowHandle, Bounds, Capslock, DevicePixels, DispatchEventResult, GpuSpecs, Modifiers,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, PlatformAtlas,
-    PlatformDisplay, PlatformInput, PlatformInputHandler, PlatformWindow, Point, PromptButton,
-    PromptLevel, RequestFrameOptions, Scene, Size, WindowAppearance, WindowBackgroundAppearance,
-    WindowBounds, WindowControlArea, WindowParams, px,
+    AnyWindowHandle, Bounds, Capslock, DevicePixels, DispatchEventResult, GpuSpecs, KeyDownEvent,
+    KeyUpEvent, Keystroke, Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, Pixels, PlatformAtlas, PlatformDisplay, PlatformInput,
+    PlatformInputHandler, PlatformWindow, Point, PromptButton, PromptLevel, RequestFrameOptions,
+    Scene, ScrollDelta, ScrollWheelEvent, Size, TouchPhase, WindowAppearance,
+    WindowBackgroundAppearance, WindowBounds, WindowControlArea, WindowParams, px,
 };
 use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
@@ -214,9 +215,98 @@ impl ArosWindowInner {
                     click_count: 1,
                 }));
             }
-            // TODO: translate rawkey to Keystroke and emit KeyDown/KeyUp.
-            glue::GPA_EVENT_RAWKEY => {}
+            glue::GPA_EVENT_RAWKEY => self.handle_rawkey(event),
             _ => {}
+        }
+    }
+
+    /// Translate an Intuition RAWKEY event: update the modifier/capslock
+    /// state from the message qualifiers, route NewMouse wheel codes to
+    /// ScrollWheel, and emit KeyDown/KeyUp with a [`Keystroke`] built from
+    /// the keymap.library translation the C glue already performed
+    /// (`base_chars` = unmodified key for the binding name, `chars` = the
+    /// typed characters).
+    fn handle_rawkey(&self, event: &GpaEvent) {
+        let is_up = event.code & glue::IECODE_UP_PREFIX != 0;
+        let down_code = event.code & !glue::IECODE_UP_PREFIX;
+        let qualifier = event.qualifier;
+
+        // Qualifiers are authoritative per message — derive the full
+        // modifier state from them and report transitions, exactly once.
+        let modifiers = modifiers_from_qualifier(qualifier);
+        let capslock = Capslock {
+            on: qualifier & glue::IEQUALIFIER_CAPSLOCK != 0,
+        };
+        let (changed, position) = {
+            let mut state = self.state.borrow_mut();
+            let changed = state.modifiers != modifiers || state.capslock != capslock;
+            state.modifiers = modifiers;
+            state.capslock = capslock;
+            (changed, state.mouse_position)
+        };
+        if changed {
+            self.fire_input(PlatformInput::ModifiersChanged(ModifiersChangedEvent {
+                modifiers,
+                capslock,
+            }));
+        }
+
+        // NewMouse standard: the scroll wheel rides the rawkey stream.
+        // Wheel-away-from-user scrolls up = positive y lines (the gpui
+        // convention shared by the Windows/Linux backends); left mirrors
+        // that as positive x. Releases of these codes are noise.
+        if (glue::RAWKEY_NM_WHEEL_UP..=glue::RAWKEY_NM_BUTTON_FOURTH).contains(&down_code) {
+            let lines = match down_code {
+                glue::RAWKEY_NM_WHEEL_UP => Point { x: 0.0, y: 1.0 },
+                glue::RAWKEY_NM_WHEEL_DOWN => Point { x: 0.0, y: -1.0 },
+                glue::RAWKEY_NM_WHEEL_LEFT => Point { x: 1.0, y: 0.0 },
+                glue::RAWKEY_NM_WHEEL_RIGHT => Point { x: -1.0, y: 0.0 },
+                _ => return, // fourth button etc. — not a wheel, not a key
+            };
+            if !is_up {
+                self.fire_input(PlatformInput::ScrollWheel(ScrollWheelEvent {
+                    position,
+                    delta: ScrollDelta::Lines(lines),
+                    modifiers,
+                    touch_phase: TouchPhase::Moved,
+                }));
+            }
+            return;
+        }
+
+        // The modifier keys themselves only feed the state above.
+        if (glue::RAWKEY_MODIFIER_FIRST..=glue::RAWKEY_MODIFIER_LAST).contains(&down_code) {
+            return;
+        }
+
+        let Some(key) = key_name(down_code, &event.base_chars) else {
+            // Unmapped code (or a dead key waiting for its successor) —
+            // nothing sensible to report.
+            return;
+        };
+
+        // The typed characters, when they're actual text: control/platform
+        // chords produce control bytes (Ctrl-A = 0x01) or shortcuts, not
+        // input — same suppression the other backends apply.
+        let key_char = if modifiers.control || modifiers.platform {
+            None
+        } else {
+            latin1_to_string(&event.chars).filter(|s| !s.chars().any(char::is_control))
+        };
+
+        let keystroke = Keystroke {
+            modifiers,
+            key,
+            key_char,
+        };
+        if is_up {
+            self.fire_input(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
+        } else {
+            self.fire_input(PlatformInput::KeyDown(KeyDownEvent {
+                keystroke,
+                is_held: qualifier & glue::IEQUALIFIER_REPEAT != 0,
+                prefer_character_input: false,
+            }));
         }
     }
 
@@ -291,6 +381,80 @@ fn map_button(code: c_int) -> MouseButton {
         glue::GPA_BUTTON_MIDDLE => MouseButton::Middle,
         glue::GPA_BUTTON_LEFT | _ => MouseButton::Left,
     }
+}
+
+/// GPUI modifiers from Amiga `IEQUALIFIER_*` bits. The Amiga/Command keys
+/// map to `platform` (like Cmd on macOS / Win on Windows); Ctrl chords stay
+/// the primary accelerator since `Keystroke::parse("secondary-…")` resolves
+/// to Ctrl off-macOS.
+fn modifiers_from_qualifier(qualifier: c_int) -> Modifiers {
+    Modifiers {
+        shift: qualifier & (glue::IEQUALIFIER_LSHIFT | glue::IEQUALIFIER_RSHIFT) != 0,
+        control: qualifier & glue::IEQUALIFIER_CONTROL != 0,
+        alt: qualifier & (glue::IEQUALIFIER_LALT | glue::IEQUALIFIER_RALT) != 0,
+        platform: qualifier & (glue::IEQUALIFIER_LCOMMAND | glue::IEQUALIFIER_RCOMMAND) != 0,
+        function: false,
+    }
+}
+
+/// The NUL-terminated ISO-8859-1 bytes from the C glue as a `String`.
+/// Latin-1 maps 1:1 onto the first 256 Unicode scalars, so `u8 as char` is
+/// the whole conversion. `None` when empty (unmapped / dead key pending).
+fn latin1_to_string(bytes: &[u8]) -> Option<String> {
+    let len = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    if len == 0 {
+        return None;
+    }
+    Some(bytes[..len].iter().map(|&b| b as char).collect())
+}
+
+/// The GPUI keybinding name for a rawkey code: named keys from the (stable
+/// Amiga) code table, everything else from the keymap's unmodified
+/// translation — so a French layout's `a` binds as "a" even though the code
+/// is RAWKEY_Q. Names match the other backends' vocabulary ("enter",
+/// "pageup", …) so existing keymaps work unchanged.
+fn key_name(down_code: c_int, base_chars: &[u8]) -> Option<String> {
+    let named = match down_code {
+        0x40 => Some("space"),
+        0x41 => Some("backspace"),
+        0x42 => Some("tab"),
+        0x43 | 0x44 => Some("enter"), // keypad enter / return
+        0x45 => Some("escape"),
+        0x46 => Some("delete"),
+        0x47 => Some("insert"),
+        0x48 => Some("pageup"),
+        0x49 => Some("pagedown"),
+        0x4A => None, // keypad minus — fall through to the keymap chars
+        0x4B => Some("f11"),
+        0x4C => Some("up"),
+        0x4D => Some("down"),
+        0x4E => Some("right"),
+        0x4F => Some("left"),
+        0x50 => Some("f1"),
+        0x51 => Some("f2"),
+        0x52 => Some("f3"),
+        0x53 => Some("f4"),
+        0x54 => Some("f5"),
+        0x55 => Some("f6"),
+        0x56 => Some("f7"),
+        0x57 => Some("f8"),
+        0x58 => Some("f9"),
+        0x59 => Some("f10"),
+        0x5F => Some("help"),
+        0x6F => Some("f12"),
+        _ => None,
+    };
+    if let Some(name) = named {
+        return Some(name.to_string());
+    }
+    // Printables: the unmodified keymap translation, lowercased so the
+    // capslock state can't change the binding identity.
+    let base = latin1_to_string(base_chars)?;
+    let trimmed: String = base.chars().filter(|c| !c.is_control()).collect();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(trimmed.to_lowercase())
 }
 
 impl HasWindowHandle for ArosWindow {

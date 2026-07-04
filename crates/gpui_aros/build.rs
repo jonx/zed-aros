@@ -18,11 +18,28 @@ fn main() {
         return;
     }
 
-    // The proto headers the glue needs, produced by the AROS OS build.
-    let proto_probe = "/tmp/arosbuild/bin/darwin-aarch64/gen/include/proto/exec.h";
-    if !Path::new(proto_probe).exists() {
+    // The headers the glue needs, produced by the AROS OS build. Probe every
+    // include root the glue reaches (proto/, exec/, devices/, …) — the /tmp
+    // tree gets GC'd piecemeal, so a single surviving file (it happens:
+    // proto/exec.h outlived exec/types.h once) must not trick us into a
+    // doomed cc invocation.
+    let include_root = "/tmp/arosbuild/bin/darwin-aarch64/gen/include";
+    let probes = [
+        "proto/exec.h",
+        "proto/intuition.h",
+        "proto/cybergraphics.h",
+        "proto/keymap.h",
+        "exec/types.h",
+        "devices/inputevent.h",
+        "intuition/intuition.h",
+        "cybergraphx/cybergraphics.h",
+    ];
+    if let Some(missing) = probes
+        .iter()
+        .find(|p| !Path::new(include_root).join(p).exists())
+    {
         println!(
-            "cargo:warning=gpui_aros glue deferred to link time (SDK proto headers absent)"
+            "cargo:warning=gpui_aros glue deferred to link time (SDK header {missing} absent)"
         );
         return;
     }

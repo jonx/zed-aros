@@ -11,9 +11,11 @@
 #include <proto/exec.h>
 #include <proto/intuition.h>
 #include <proto/cybergraphics.h>
+#include <proto/keymap.h>
 
 #include <intuition/intuition.h>
 #include <cybergraphx/cybergraphics.h>
+#include <devices/inputevent.h>
 #include <exec/libraries.h>
 
 #include <string.h>
@@ -23,6 +25,10 @@
  * them and opens the libraries lazily on first window open. */
 struct IntuitionBase *IntuitionBase;
 struct Library *CyberGfxBase;
+/* keymap.library drives rawkey -> character translation (MapRawKey). Opened
+ * lazily like the others but non-fatal when missing: windows still work,
+ * typing just produces no characters (named keys keep working from codes). */
+struct Library *KeymapBase;
 
 typedef struct GpaWindow {
     struct Window *win;
@@ -46,6 +52,13 @@ typedef struct GpaEvent {
     int qualifier;
     int x;
     int y;
+    /* RAWKEY only, else empty. keymap.library translation of the key in the
+     * system charset (ISO-8859-1 on stock AROS), NUL-terminated.
+     * `chars` uses the message's real qualifiers (what the user typed);
+     * `base_chars` uses qualifier 0 (the unmodified key, for the
+     * keybinding name — shift-A must still bind as "a"). */
+    char chars[8];
+    char base_chars[8];
 } GpaEvent;
 
 static int gpa_init(void)
@@ -57,7 +70,40 @@ static int gpa_init(void)
     if (!CyberGfxBase) {
         CyberGfxBase = OpenLibrary("cybergraphics.library", 0);
     }
+    if (!KeymapBase) {
+        KeymapBase = OpenLibrary("keymap.library", 0);
+    }
+    /* KeymapBase deliberately not required (see its comment). */
     return (IntuitionBase && CyberGfxBase) ? 0 : -1;
+}
+
+/* Translate a rawkey IntuiMessage through the active keymap into `buf`
+ * (NUL-terminated; empty on failure or when the code produces nothing, e.g.
+ * a dead key waiting for its successor). `qualifier` lets the caller ask for
+ * the typed characters (real qualifiers) or the unmodified key (0).
+ * The IAddress dead-key context pointer is only valid before ReplyMsg — call
+ * this while the message is still ours. */
+static void gpa_map_rawkey(struct IntuiMessage *im, int code, int qualifier,
+                           char *buf, int buf_len)
+{
+    buf[0] = 0;
+    if (!KeymapBase)
+        return;
+
+    struct InputEvent ie;
+    memset(&ie, 0, sizeof(ie));
+    ie.ie_Class = IECLASS_RAWKEY;
+    ie.ie_Code = code;
+    ie.ie_Qualifier = qualifier;
+    /* For IDCMP_RAWKEY, IAddress points at a pointer to the previous key's
+     * codes — the dead-key context MapRawKey needs (e.g. alt-e then e). */
+    ie.ie_EventAddress = im->IAddress ? *((APTR *)im->IAddress) : NULL;
+
+    LONG n = MapRawKey(&ie, (STRPTR)buf, buf_len - 1, NULL);
+    if (n > 0)
+        buf[n] = 0;
+    else
+        buf[0] = 0;
 }
 
 static char *gpa_strdup(const char *s)
@@ -144,6 +190,8 @@ int gpa_poll_event(void *handle, GpaEvent *out)
         int qualifier = im->Qualifier;
         int mx = im->MouseX - w->win->BorderLeft;
         int my = im->MouseY - w->win->BorderTop;
+        out->chars[0] = 0;
+        out->base_chars[0] = 0;
 
         switch (im->Class) {
         case IDCMP_CLOSEWINDOW:
@@ -192,9 +240,22 @@ int gpa_poll_event(void *handle, GpaEvent *out)
                 break;
             }
             break;
-        case IDCMP_RAWKEY:
+        case IDCMP_RAWKEY: {
             kind = GPA_EVENT_RAWKEY;
+            /* Map while the message (and its IAddress dead-key context) is
+             * still valid — ReplyMsg comes right after this switch. Key-ups
+             * (IECODE_UP_PREFIX) map the corresponding down code so the
+             * release still carries a key name; typed characters are only
+             * meaningful on the down stroke. */
+            int down_code = im->Code & ~IECODE_UP_PREFIX;
+            if (!(im->Code & IECODE_UP_PREFIX)) {
+                gpa_map_rawkey(im, down_code, im->Qualifier, out->chars,
+                               sizeof(out->chars));
+            }
+            gpa_map_rawkey(im, down_code, 0, out->base_chars,
+                           sizeof(out->base_chars));
             break;
+        }
         default:
             break;
         }
