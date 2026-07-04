@@ -7828,6 +7828,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui_aros_smoke"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.3.4",
+ "gpui",
+ "gpui_platform",
+]
+
+[[package]]
 name = "gpui_linux"
 version = "0.1.0"
 dependencies = [

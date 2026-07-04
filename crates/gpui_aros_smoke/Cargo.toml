@@ -1,0 +1,24 @@
+[package]
+name = "gpui_aros_smoke"
+version = "0.1.0"
+publish.workspace = true
+edition.workspace = true
+license = "Apache-2.0"
+
+[lints]
+workspace = true
+
+# A staticlib, linked into an AROS C: command by link-aros.sh (mirroring
+# hosted/rust/std-build.sh): C owns AROS startup and calls
+# aros_gpui_smoke_main, which opens a real GPUI window through the
+# gpui_aros backend.
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+gpui.workspace = true
+gpui_platform.workspace = true
+# The custom getrandom backend the .cargo/config selects for this target
+# (`getrandom_backend="custom"`) — the binary must provide
+# __getrandom_v03_custom; ours rides posixc arc4random_buf.
+getrandom = "0.3"

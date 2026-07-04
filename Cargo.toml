@@ -91,6 +91,7 @@ members = [
     "crates/grammars",
     "crates/gpui",
     "crates/gpui_aros",
+    "crates/gpui_aros_smoke",
     "crates/gpui_shared_string",
     "crates/gpui_linux",
     "crates/gpui_macos",
