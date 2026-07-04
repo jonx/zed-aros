@@ -290,12 +290,43 @@ impl Platform for ArosPlatform {
     }
 
     fn read_from_clipboard(&self) -> Option<ClipboardItem> {
-        // TODO: bridge AROS clipboard.device.
-        None
+        let mut buf: *mut std::ffi::c_void = std::ptr::null_mut();
+        let mut len: std::os::raw::c_int = 0;
+        // SAFETY: FFI; on success `buf` is an AllocVec'd buffer of `len`
+        // bytes that we must hand back to gpa_free.
+        unsafe {
+            if crate::glue::gpa_clipboard_read_text(&mut buf, &mut len) != 0 || buf.is_null() {
+                return None;
+            }
+            let bytes = std::slice::from_raw_parts(buf as *const u8, len.max(0) as usize);
+            // FTXT is system-charset text — ISO-8859-1 on stock AROS, which
+            // maps 1:1 onto the first 256 Unicode scalars.
+            let text: String = bytes.iter().map(|&b| b as char).collect();
+            crate::glue::gpa_free(buf);
+            Some(ClipboardItem::new_string(text))
+        }
     }
 
-    fn write_to_clipboard(&self, _item: ClipboardItem) {
-        // TODO: bridge AROS clipboard.device.
+    fn write_to_clipboard(&self, item: ClipboardItem) {
+        let Some(text) = item.text() else {
+            return; // image-only clips: nothing to publish as FTXT
+        };
+        // UTF-8 -> ISO-8859-1, lossy: anything past U+00FF becomes '?'
+        // (FTXT has no wider charset; a CSET/UTF8 chunk is a v2 nicety).
+        let bytes: Vec<u8> = text
+            .chars()
+            .map(|c| if (c as u32) <= 0xFF { c as u32 as u8 } else { b'?' })
+            .collect();
+        // SAFETY: FFI; the glue copies the bytes before returning.
+        unsafe {
+            if crate::glue::gpa_clipboard_write_text(
+                bytes.as_ptr() as *const std::ffi::c_void,
+                bytes.len() as std::os::raw::c_int,
+            ) != 0
+            {
+                log::warn!("gpui_aros: clipboard write failed");
+            }
+        }
     }
 
     fn write_credentials(&self, _url: &str, _username: &str, _password: &[u8]) -> Task<Result<()>> {

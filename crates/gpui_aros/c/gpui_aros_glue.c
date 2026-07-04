@@ -15,7 +15,9 @@
 
 #include <intuition/intuition.h>
 #include <cybergraphx/cybergraphics.h>
+#include <devices/clipboard.h>
 #include <devices/inputevent.h>
+#include <exec/io.h>
 #include <exec/libraries.h>
 
 #include <string.h>
@@ -353,6 +355,159 @@ void gpa_set_title(void *handle, const char *title)
     SetWindowTitles(w->win, copy, (CONST_STRPTR)~0ul);
     FreeVec(w->title);
     w->title = copy;
+}
+
+/* ---- Clipboard (clipboard.device unit 0, IFF FTXT) ---------------------
+ *
+ * The Amiga clipboard is an IFF stream on clipboard.device: text lives in a
+ * FORM FTXT containing CHRS chunks (system charset — ISO-8859-1 on stock
+ * AROS; the Rust side converts to/from UTF-8). Reads and writes are the
+ * classic RKM sequences: sequential CMD_READs until io_Actual == 0, and
+ * CMD_WRITEs finished by CMD_UPDATE to publish the clip. Main-thread only
+ * (called from GPUI's Platform methods); one lazily-created IORequest. */
+
+static struct MsgPort *clip_port;
+static struct IOClipReq *clip_req;
+
+static int clip_open(void)
+{
+    if (clip_req)
+        return 0;
+    clip_port = CreateMsgPort();
+    if (!clip_port)
+        return -1;
+    clip_req =
+        (struct IOClipReq *)CreateIORequest(clip_port, sizeof(struct IOClipReq));
+    if (!clip_req) {
+        DeleteMsgPort(clip_port);
+        clip_port = NULL;
+        return -1;
+    }
+    if (OpenDevice("clipboard.device", PRIMARY_CLIP,
+                   (struct IORequest *)clip_req, 0) != 0) {
+        DeleteIORequest((struct IORequest *)clip_req);
+        clip_req = NULL;
+        DeleteMsgPort(clip_port);
+        clip_port = NULL;
+        return -1;
+    }
+    return 0;
+}
+
+static ULONG clip_io(UWORD cmd, void *data, ULONG len)
+{
+    clip_req->io_Command = cmd;
+    clip_req->io_Data = (STRPTR)data;
+    clip_req->io_Length = len;
+    DoIO((struct IORequest *)clip_req);
+    return clip_req->io_Actual;
+}
+
+static void be32(UBYTE *out, ULONG v)
+{
+    out[0] = (v >> 24) & 0xff;
+    out[1] = (v >> 16) & 0xff;
+    out[2] = (v >> 8) & 0xff;
+    out[3] = v & 0xff;
+}
+
+static ULONG rd32(const UBYTE *p)
+{
+    return ((ULONG)p[0] << 24) | ((ULONG)p[1] << 16) | ((ULONG)p[2] << 8)
+        | (ULONG)p[3];
+}
+
+/* Write `len` bytes as FORM FTXT / CHRS. Returns 0 on success. */
+int gpa_clipboard_write_text(const void *bytes, int len)
+{
+    if (len < 0 || clip_open() != 0)
+        return -1;
+
+    ULONG chrs_len = (ULONG)len;
+    ULONG pad = chrs_len & 1;
+    /* FORM length counts everything after its own length field. */
+    ULONG form_len = 4 + 8 + chrs_len + pad;
+
+    UBYTE header[20];
+    memcpy(header, "FORM", 4);
+    be32(header + 4, form_len);
+    memcpy(header + 8, "FTXT", 4);
+    memcpy(header + 12, "CHRS", 4);
+    be32(header + 16, chrs_len);
+
+    clip_req->io_Offset = 0;
+    clip_req->io_Error = 0;
+    clip_req->io_ClipID = 0;
+    clip_io(CMD_WRITE, header, sizeof(header));
+    if (chrs_len)
+        clip_io(CMD_WRITE, (void *)bytes, chrs_len);
+    if (pad) {
+        UBYTE zero = 0;
+        clip_io(CMD_WRITE, &zero, 1);
+    }
+    /* Publish. */
+    clip_io(CMD_UPDATE, NULL, 0);
+    return clip_req->io_Error ? -1 : 0;
+}
+
+/* Read the first CHRS chunk of a FORM FTXT clip. On success returns 0 and
+ * hands out an AllocVec'd, NUL-terminated buffer (free with gpa_free). */
+int gpa_clipboard_read_text(void **out, int *out_len)
+{
+    *out = NULL;
+    *out_len = 0;
+    if (clip_open() != 0)
+        return -1;
+
+    clip_req->io_Offset = 0;
+    clip_req->io_Error = 0;
+    clip_req->io_ClipID = 0;
+
+    UBYTE hdr[12];
+    if (clip_io(CMD_READ, hdr, sizeof(hdr)) == sizeof(hdr)
+        && memcmp(hdr, "FORM", 4) == 0 && memcmp(hdr + 8, "FTXT", 4) == 0) {
+        for (;;) {
+            UBYTE ch[8];
+            if (clip_io(CMD_READ, ch, sizeof(ch)) != sizeof(ch))
+                break;
+            ULONG clen = rd32(ch + 4);
+            if (memcmp(ch, "CHRS", 4) == 0) {
+                UBYTE *buf = AllocVec(clen + 1, MEMF_ANY);
+                if (buf && clip_io(CMD_READ, buf, clen) == clen) {
+                    buf[clen] = 0;
+                    *out = buf;
+                    *out_len = (int)clen;
+                } else {
+                    FreeVec(buf); /* FreeVec(NULL) is a no-op */
+                }
+                break;
+            }
+            /* Skip a foreign chunk (+ IFF pad byte). */
+            ULONG skip = clen + (clen & 1);
+            UBYTE sink[256];
+            while (skip) {
+                ULONG n = skip > sizeof(sink) ? sizeof(sink) : skip;
+                if (clip_io(CMD_READ, sink, n) != n)
+                    goto drain;
+                skip -= n;
+            }
+        }
+    }
+
+drain:
+    /* RKM convention: keep reading until io_Actual == 0 so the device knows
+     * this read sequence is over (otherwise the clip stays locked). */
+    {
+        UBYTE sink[256];
+        while (clip_io(CMD_READ, sink, sizeof(sink)) > 0) {}
+    }
+    return *out ? 0 : -1;
+}
+
+void gpa_free(void *p)
+{
+    if (p)
+        FreeVec(p);
 }
 
 /* Size of the (public) screen the windows open on. Returns 0 on success. */

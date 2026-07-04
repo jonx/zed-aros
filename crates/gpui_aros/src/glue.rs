@@ -110,4 +110,16 @@ unsafe extern "C" {
 
     /// Nudge the run loop out of its park. Any thread; no-op before init.
     pub(crate) fn gpa_wake_main();
+
+    /// Write `len` bytes to clipboard.device unit 0 as FORM FTXT / CHRS
+    /// (system charset). Main thread. Returns 0 on success.
+    pub(crate) fn gpa_clipboard_write_text(bytes: *const c_void, len: c_int) -> c_int;
+
+    /// Read the first CHRS chunk of the current FTXT clip into an
+    /// AllocVec'd NUL-terminated buffer (`gpa_free` it). Main thread.
+    /// Returns 0 on success.
+    pub(crate) fn gpa_clipboard_read_text(out: *mut *mut c_void, out_len: *mut c_int) -> c_int;
+
+    /// Free a buffer handed out by the glue (AllocVec-backed).
+    pub(crate) fn gpa_free(p: *mut c_void);
 }
