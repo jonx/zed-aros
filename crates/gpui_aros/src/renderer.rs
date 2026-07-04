@@ -1,10 +1,15 @@
 //! tiny-skia CPU renderer for the GPUI scene.
 //!
-//! Real handling for solid Quads (rounded corners + borders) and
-//! MonochromeSprites (glyphs: atlas alpha tinted by color), both clipped to the
-//! primitive's content mask. Shadows / Paths / Underlines / Polychrome /
-//! Subpixel / Surfaces are TODO no-ops this milestone. Subpixel rendering is
-//! reported unsupported, so GPUI never emits SubpixelSprites.
+//! Real handling for solid Quads (rounded corners + borders),
+//! MonochromeSprites (glyphs: atlas alpha tinted by color), PolychromeSprites
+//! (images: premultiplied BGRA atlas tiles, with opacity/grayscale and
+//! rounded-corner clipping), Paths (pre-tessellated triangles), Underlines
+//! (straight + wavy), and drop Shadows (layered-ring blur approximation) —
+//! all clipped to the primitive's content mask. Remaining TODO no-ops:
+//! gradient backgrounds (`Background`'s stops are pub(crate); needs a small
+//! gpui accessor), inset shadows, and Surfaces (mac-only video frames, never
+//! emitted here). Subpixel rendering is reported unsupported, so GPUI never
+//! emits SubpixelSprites.
 
 use std::sync::Arc;
 
@@ -12,8 +17,8 @@ use gpui::{
     Bounds, ContentMask, DevicePixels, Hsla, PrimitiveBatch, Quad, Rgba, ScaledPixels, Scene, Size,
 };
 use tiny_skia::{
-    Color, FillRule, Mask, Paint, PathBuilder, Pixmap, PixmapPaint, PremultipliedColorU8, Rect,
-    Stroke, Transform,
+    Color, FillRule, FilterQuality, Mask, Paint, PathBuilder, Pixmap, PixmapPaint,
+    PremultipliedColorU8, Rect, Stroke, Transform,
 };
 
 use crate::atlas::CpuAtlas;
@@ -70,9 +75,24 @@ impl CpuRenderer {
 
         for batch in scene.batches() {
             match batch {
+                PrimitiveBatch::Shadows(range) => {
+                    for shadow in &scene.shadows[range] {
+                        self.draw_shadow(shadow);
+                    }
+                }
                 PrimitiveBatch::Quads(range) => {
                     for quad in &scene.quads[range] {
                         self.draw_quad(quad);
+                    }
+                }
+                PrimitiveBatch::Paths(range) => {
+                    for path in &scene.paths[range] {
+                        self.draw_path(path);
+                    }
+                }
+                PrimitiveBatch::Underlines(range) => {
+                    for underline in &scene.underlines[range] {
+                        self.draw_underline(underline);
                     }
                 }
                 PrimitiveBatch::MonochromeSprites { range, .. } => {
@@ -80,7 +100,12 @@ impl CpuRenderer {
                         self.draw_monochrome_sprite(sprite);
                     }
                 }
-                // TODO: shadows, paths, underlines, polychrome sprites, surfaces.
+                PrimitiveBatch::PolychromeSprites { range, .. } => {
+                    for sprite in &scene.polychrome_sprites[range] {
+                        self.draw_polychrome_sprite(sprite);
+                    }
+                }
+                // Surfaces are mac-only video frames — never emitted here.
                 _ => {}
             }
         }
@@ -180,6 +205,266 @@ impl CpuRenderer {
         );
     }
 
+    /// Images: premultiplied BGRA atlas tiles blitted (scaled when the layout
+    /// size differs from the tile), honoring opacity, the grayscale flag, and
+    /// rounded corners (via a one-off mask — corner clipping composes with the
+    /// rectangular content mask).
+    fn draw_polychrome_sprite(&mut self, sprite: &gpui::PolychromeSprite) {
+        let Some(tile) = self.atlas.read_tile(&sprite.tile) else {
+            return;
+        };
+        if tile.bytes_per_pixel != 4 || tile.width == 0 || tile.height == 0 {
+            return;
+        }
+
+        let Some(mut sprite_pixmap) = Pixmap::new(tile.width as u32, tile.height as u32) else {
+            return;
+        };
+        // Atlas polychrome bytes are premultiplied BGRA (gpui's image
+        // convention); tiny-skia wants premultiplied RGBA — swap B/R,
+        // scaling by opacity (and collapsing to luma when grayscale).
+        let opacity = sprite.opacity.clamp(0.0, 1.0);
+        let dst = sprite_pixmap.data_mut();
+        for (src, out) in tile.data.chunks_exact(4).zip(dst.chunks_exact_mut(4)) {
+            let (b, g, r, a) = (src[0] as f32, src[1] as f32, src[2] as f32, src[3] as f32);
+            let (r, g, b) = if sprite.grayscale {
+                // Premultiplied channels share the pixel's alpha, so the
+                // luma weights apply directly.
+                let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                (y, y, y)
+            } else {
+                (r, g, b)
+            };
+            out[0] = (r * opacity).round().clamp(0.0, 255.0) as u8;
+            out[1] = (g * opacity).round().clamp(0.0, 255.0) as u8;
+            out[2] = (b * opacity).round().clamp(0.0, 255.0) as u8;
+            out[3] = (a * opacity).round().clamp(0.0, 255.0) as u8;
+        }
+
+        self.update_clip(&sprite.content_mask);
+        // Rounded corners need a shape clip on top of the rectangular
+        // content mask; build a one-off intersection so the cached
+        // rect-only mask stays valid for the next primitive.
+        let corner_mask = if is_square(&sprite.corner_radii) {
+            None
+        } else {
+            rounded_rect_path(&sprite.bounds, &sprite.corner_radii).map(|path| {
+                let mut mask = match self.clip_mask.clone() {
+                    Some(m) => m,
+                    None => {
+                        let mut m = Mask::new(self.pixmap.width(), self.pixmap.height())
+                            .expect("mask allocation follows the framebuffer, which allocated");
+                        m.fill_path(
+                            &PathBuilder::from_rect(
+                                Rect::from_xywh(
+                                    0.0,
+                                    0.0,
+                                    self.pixmap.width() as f32,
+                                    self.pixmap.height() as f32,
+                                )
+                                .expect("framebuffer dims are positive"),
+                            ),
+                            FillRule::Winding,
+                            true,
+                            Transform::identity(),
+                        );
+                        m
+                    }
+                };
+                mask.intersect_path(&path, FillRule::Winding, true, Transform::identity());
+                mask
+            })
+        };
+        let mask = corner_mask.as_ref().or(self.clip_mask.as_ref());
+
+        // Blit, scaling when layout and tile sizes differ (fractional
+        // display scales, zoomed images).
+        let dst_w = sprite.bounds.size.width.0;
+        let dst_h = sprite.bounds.size.height.0;
+        if dst_w <= 0.0 || dst_h <= 0.0 {
+            return;
+        }
+        let sx = dst_w / tile.width as f32;
+        let sy = dst_h / tile.height as f32;
+        let x = sprite.bounds.origin.x.0;
+        let y = sprite.bounds.origin.y.0;
+        if (sx - 1.0).abs() < 0.001 && (sy - 1.0).abs() < 0.001 {
+            self.pixmap.draw_pixmap(
+                x.round() as i32,
+                y.round() as i32,
+                sprite_pixmap.as_ref(),
+                &PixmapPaint::default(),
+                Transform::identity(),
+                mask,
+            );
+        } else {
+            let paint = PixmapPaint {
+                quality: FilterQuality::Bilinear,
+                ..PixmapPaint::default()
+            };
+            self.pixmap.draw_pixmap(
+                0,
+                0,
+                sprite_pixmap.as_ref(),
+                &paint,
+                Transform::from_scale(sx, sy).post_translate(x, y),
+                mask,
+            );
+        }
+    }
+
+    /// Pre-tessellated vector paths (tab curves, chart lines, …): every
+    /// triangle appended into one tiny-skia path filled with the nonzero
+    /// winding rule, so shared edges can't double-blend at partial alpha.
+    /// Anti-aliasing stays off for the same reason — edge AA would show
+    /// seams between adjacent triangles instead of a smooth silhouette.
+    fn draw_path(&mut self, path: &gpui::Path<ScaledPixels>) {
+        // Gradient fills need gpui to expose the stops (see module doc).
+        let Some(color) = path.color.as_solid() else {
+            return;
+        };
+        if color.is_transparent() || path.vertices.is_empty() {
+            return;
+        }
+        let mut pb = PathBuilder::new();
+        for tri in path.vertices.chunks_exact(3) {
+            pb.move_to(tri[0].xy_position.x.0, tri[0].xy_position.y.0);
+            pb.line_to(tri[1].xy_position.x.0, tri[1].xy_position.y.0);
+            pb.line_to(tri[2].xy_position.x.0, tri[2].xy_position.y.0);
+            pb.close();
+        }
+        let Some(skia_path) = pb.finish() else {
+            return;
+        };
+        self.update_clip(&path.content_mask);
+        let mask = self.clip_mask.as_ref();
+        let mut paint = solid_paint(color);
+        paint.anti_alias = false;
+        self.pixmap
+            .fill_path(&skia_path, &paint, FillRule::Winding, Transform::identity(), mask);
+    }
+
+    /// Underlines. Straight ones fill their bounds (already sized to the
+    /// line thickness by the paint layer); wavy ones (diagnostics squiggles)
+    /// stroke a sine wave across the bounds — cubic segments per half-wave,
+    /// amplitude from the bounds height, ~6×-thickness wavelength, visually
+    /// matching the GPU shaders without reproducing their exact math.
+    fn draw_underline(&mut self, underline: &gpui::Underline) {
+        if underline.color.is_transparent() {
+            return;
+        }
+        self.update_clip(&underline.content_mask);
+        let mask = self.clip_mask.as_ref();
+        let paint = solid_paint(underline.color);
+        let b = &underline.bounds;
+        let thickness = underline.thickness.0.max(0.5);
+
+        if underline.wavy == 0 {
+            if let Some(rect) = Rect::from_xywh(
+                b.origin.x.0,
+                b.origin.y.0,
+                b.size.width.0,
+                b.size.height.0.min(thickness).max(0.5),
+            ) {
+                self.pixmap
+                    .fill_rect(rect, &paint, Transform::identity(), mask);
+            }
+            return;
+        }
+
+        let width = b.size.width.0;
+        if width <= 0.0 {
+            return;
+        }
+        let amplitude = ((b.size.height.0 - thickness) / 2.0).max(0.5);
+        let mid_y = b.origin.y.0 + b.size.height.0 / 2.0;
+        let half_wave = (3.0 * thickness).max(2.0);
+        // K: the classic cubic-Bezier sine approximation constant for a
+        // half-period (control points at 1/3 and 2/3 of the span).
+        const K: f32 = 0.3642;
+        let mut pb = PathBuilder::new();
+        pb.move_to(b.origin.x.0, mid_y);
+        let mut x = b.origin.x.0;
+        let mut sign = -1.0f32; // first crest points up (screen-y down)
+        while x < b.origin.x.0 + width {
+            let x_end = (x + half_wave).min(b.origin.x.0 + width);
+            let span = x_end - x;
+            let peak = sign * amplitude * (span / half_wave);
+            pb.cubic_to(
+                x + span * K,
+                mid_y + peak,
+                x_end - span * K,
+                mid_y + peak,
+                x_end,
+                mid_y,
+            );
+            x = x_end;
+            sign = -sign;
+        }
+        if let Some(wave) = pb.finish() {
+            let stroke = Stroke {
+                width: thickness,
+                ..Stroke::default()
+            };
+            self.pixmap
+                .stroke_path(&wave, &paint, &stroke, Transform::identity(), mask);
+        }
+    }
+
+    /// Drop shadows, approximated: tiny-skia has no gaussian blur, so we
+    /// layer a handful of concentric rounded rects from the outer (blurred)
+    /// extent inward, each adding a slice of the shadow's alpha — a cheap
+    /// falloff that reads as soft at UI shadow sizes. Inset shadows are
+    /// rare in GPUI chrome and stay TODO.
+    fn draw_shadow(&mut self, shadow: &gpui::Shadow) {
+        if shadow.inset != 0 || shadow.color.is_transparent() {
+            return;
+        }
+        self.update_clip(&shadow.content_mask);
+
+        let blur = shadow.blur_radius.0.max(0.0);
+        let base: Rgba = shadow.color.into();
+        if blur < 1.0 {
+            // Sharp shadow: a single fill of the quad.
+            if let Some(path) = rounded_rect_path(&shadow.bounds, &shadow.corner_radii) {
+                let mask = self.clip_mask.as_ref();
+                self.pixmap.fill_path(
+                    &path,
+                    &solid_paint(shadow.color),
+                    FillRule::Winding,
+                    Transform::identity(),
+                    mask,
+                );
+            }
+            return;
+        }
+
+        // Cumulative alpha per layer approximating a smooth falloff:
+        // innermost layer is covered by all fills (≈ full alpha), the
+        // outer band only by the faintest one.
+        const WEIGHTS: [f32; 4] = [0.10, 0.15, 0.25, 0.50];
+        for (i, w) in WEIGHTS.iter().enumerate() {
+            let inset = blur * (1.0 - (i as f32 + 1.0) / WEIGHTS.len() as f32);
+            let bounds = inset_bounds(&shadow.bounds, inset);
+            let radii = inset_radii(&shadow.corner_radii, inset);
+            let Some(path) = rounded_rect_path(&bounds, &radii)
+                .or_else(|| to_rect(&bounds).map(PathBuilder::from_rect))
+            else {
+                continue;
+            };
+            let mut layer = base;
+            layer.a *= w;
+            let mask = self.clip_mask.as_ref();
+            self.pixmap.fill_path(
+                &path,
+                &solid_paint(Hsla::from(layer)),
+                FillRule::Winding,
+                Transform::identity(),
+                mask,
+            );
+        }
+    }
+
     /// Rebuild the clip mask for `content_mask` if it changed. A clip covering
     /// the whole framebuffer sets no mask (`clip_mask = None`).
     fn update_clip(&mut self, content_mask: &ContentMask<ScaledPixels>) {
@@ -248,6 +533,17 @@ fn inset_bounds(bounds: &Bounds<ScaledPixels>, inset: f32) -> Bounds<ScaledPixel
             width: ScaledPixels((bounds.size.width.0 - 2.0 * inset).max(0.0)),
             height: ScaledPixels((bounds.size.height.0 - 2.0 * inset).max(0.0)),
         },
+    }
+}
+
+/// Corner radii shrunk to follow bounds inset by `inset` (never negative).
+fn inset_radii(radii: &gpui::Corners<ScaledPixels>, inset: f32) -> gpui::Corners<ScaledPixels> {
+    let shrink = |r: ScaledPixels| ScaledPixels((r.0 - inset).max(0.0));
+    gpui::Corners {
+        top_left: shrink(radii.top_left),
+        top_right: shrink(radii.top_right),
+        bottom_right: shrink(radii.bottom_right),
+        bottom_left: shrink(radii.bottom_left),
     }
 }
 
