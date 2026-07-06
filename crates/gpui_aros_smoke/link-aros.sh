@@ -61,5 +61,10 @@ COMPILER_PATH="$XTBIN" "$COLLECT" \
     -\( "${AUTOLIB[@]}" "${STDLIBS[@]}" -\)
 echo "[link] built: $OUT/GpuiSmoke ($(stat -f%z "$OUT/GpuiSmoke") bytes)"
 
+# Debug-info ET_RELs take minutes to LoadSeg; strip before deploy
+# (PORTING.md "LoadSeg scale").
+"$XTOOLS/bin/llvm-strip" --strip-debug "$OUT/GpuiSmoke"
+echo "[link] stripped: $OUT/GpuiSmoke ($(stat -f%z "$OUT/GpuiSmoke") bytes)"
+
 cp -f "$OUT/GpuiSmoke" "$CDIR/GpuiSmoke"; chmod +x "$CDIR/GpuiSmoke"
 echo "[link] deployed -> $CDIR/GpuiSmoke"
