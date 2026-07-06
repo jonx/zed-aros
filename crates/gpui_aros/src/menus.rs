@@ -60,11 +60,11 @@ fn commkey_for(action: &dyn Action, keymap: &Keymap) -> Option<CString> {
     let [keystroke] = binding.keystrokes() else {
         return None;
     };
-    let m = keystroke.modifiers;
+    let m = keystroke.modifiers();
     if !m.platform || m.control || m.alt || m.function || m.shift {
         return None;
     }
-    let mut chars = keystroke.key.chars();
+    let mut chars = keystroke.key().chars();
     let (Some(c), None) = (chars.next(), chars.next()) else {
         return None;
     };
