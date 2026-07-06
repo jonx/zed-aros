@@ -12,13 +12,21 @@
 #include <proto/intuition.h>
 #include <proto/cybergraphics.h>
 #include <proto/keymap.h>
+#include <proto/gadtools.h>
+#include <proto/asl.h>
+#include <proto/dos.h>
 
 #include <intuition/intuition.h>
+#include <intuition/pointerclass.h>
 #include <cybergraphx/cybergraphics.h>
 #include <devices/clipboard.h>
 #include <devices/inputevent.h>
 #include <exec/io.h>
 #include <exec/libraries.h>
+#include <graphics/gfx.h>
+#include <libraries/asl.h>
+#include <libraries/gadtools.h>
+#include <workbench/startup.h>
 
 #include <string.h>
 #include <unistd.h>
@@ -31,10 +39,29 @@ struct Library *CyberGfxBase;
  * lazily like the others but non-fatal when missing: windows still work,
  * typing just produces no characters (named keys keep working from codes). */
 struct Library *KeymapBase;
+/* gadtools builds the menu strips; asl serves the file requesters. Both are
+ * lazily opened and non-fatal when missing: without gadtools there are no
+ * pulldowns, without asl the path prompts return "cancelled". */
+struct Library *GadToolsBase;
+struct Library *AslBase;
+/* DOSBase comes from the C startup the final binary always links. */
+
+/* Queued MENUPICK actions: an Intuition menu drag can select several items
+ * in one message (NextSelect chain); poll_event hands them out one by one. */
+#define GPA_PICK_QUEUE 32
 
 typedef struct GpaWindow {
     struct Window *win;
     char *title; /* AllocVec'd copy; WA_Title does not copy the string */
+
+    /* Menu strip state (gpa_set_menus). GadTools does not copy label
+     * strings, so `menu_strs` keeps the copies alive until FreeMenus. */
+    struct Menu *menustrip;
+    APTR vi; /* GetVisualInfo of the window's screen */
+    char **menu_strs;
+    int menu_str_count;
+    int picks[GPA_PICK_QUEUE];
+    int pick_head, pick_tail;
 } GpaWindow;
 
 /* Event kinds, mirrored by GpaEvent in src/window.rs. */
@@ -46,6 +73,7 @@ enum {
     GPA_EVENT_MOUSEDOWN = 5,
     GPA_EVENT_MOUSEUP = 6,
     GPA_EVENT_RAWKEY = 7,
+    GPA_EVENT_MENUPICK = 8, /* code = the item id passed to gpa_set_menus */
 };
 
 typedef struct GpaEvent {
@@ -75,7 +103,14 @@ static int gpa_init(void)
     if (!KeymapBase) {
         KeymapBase = OpenLibrary("keymap.library", 0);
     }
-    /* KeymapBase deliberately not required (see its comment). */
+    if (!GadToolsBase) {
+        GadToolsBase = OpenLibrary("gadtools.library", 0);
+    }
+    if (!AslBase) {
+        AslBase = OpenLibrary("asl.library", 0);
+    }
+    /* KeymapBase/GadToolsBase/AslBase deliberately not required (see their
+     * comments). */
     return (IntuitionBase && CyberGfxBase) ? 0 : -1;
 }
 
@@ -172,7 +207,8 @@ void *gpa_open_window(int x, int y, int inner_w, int inner_h,
         WA_Flags, WFLG_DRAGBAR | WFLG_DEPTHGADGET | WFLG_CLOSEGADGET
             | WFLG_SIZEGADGET | WFLG_ACTIVATE | WFLG_SMART_REFRESH,
         WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_NEWSIZE | IDCMP_REFRESHWINDOW
-            | IDCMP_MOUSEBUTTONS | IDCMP_MOUSEMOVE | IDCMP_RAWKEY,
+            | IDCMP_MOUSEBUTTONS | IDCMP_MOUSEMOVE | IDCMP_RAWKEY
+            | IDCMP_MENUPICK,
         WA_ReportMouse, TRUE,
         TAG_DONE);
 
@@ -184,19 +220,44 @@ void *gpa_open_window(int x, int y, int inner_w, int inner_h,
     return w;
 }
 
+static void gpa_free_menus(GpaWindow *w)
+{
+    if (w->menustrip) {
+        if (w->win)
+            ClearMenuStrip(w->win);
+        FreeMenus(w->menustrip);
+        w->menustrip = NULL;
+    }
+    if (w->vi) {
+        FreeVisualInfo(w->vi);
+        w->vi = NULL;
+    }
+    if (w->menu_strs) {
+        for (int i = 0; i < w->menu_str_count; i++)
+            FreeVec(w->menu_strs[i]);
+        FreeVec(w->menu_strs);
+        w->menu_strs = NULL;
+        w->menu_str_count = 0;
+    }
+    w->pick_head = w->pick_tail = 0;
+}
+
 void gpa_close_window(void *handle)
 {
     GpaWindow *w = handle;
     if (!w)
         return;
+    gpa_free_menus(w);
     if (w->win)
         CloseWindow(w->win);
     FreeVec(w->title);
     FreeVec(w);
 }
 
-/* Blit a tightly rowed RGBA8888 buffer into the window's inner area at
- * (x, y). RECTFMT_RGBA matches tiny-skia's RGBA byte order directly. */
+/* Blit the (x, y, width, height) subrect of a tightly rowed RGBA8888
+ * full-framebuffer into the window's inner area at the same (x, y) — the
+ * dirty-rect path hands the whole buffer plus the damaged rect.
+ * RECTFMT_RGBA matches tiny-skia's RGBA byte order directly. */
 void gpa_blit(void *handle, const void *rgba, int src_stride_bytes, int x,
               int y, int width, int height)
 {
@@ -204,7 +265,7 @@ void gpa_blit(void *handle, const void *rgba, int src_stride_bytes, int x,
     if (!w || !w->win || width <= 0 || height <= 0)
         return;
 
-    WritePixelArray((APTR)rgba, 0, 0, src_stride_bytes, w->win->RPort,
+    WritePixelArray((APTR)rgba, x, y, src_stride_bytes, w->win->RPort,
                     w->win->BorderLeft + x, w->win->BorderTop + y, width,
                     height, RECTFMT_RGBA);
 }
@@ -216,6 +277,16 @@ int gpa_poll_event(void *handle, GpaEvent *out)
     GpaWindow *w = handle;
     if (!w || !w->win || !w->win->UserPort || !out)
         return 0;
+
+    /* Deliver queued menu picks (a NextSelect chain from an earlier
+     * MENUPICK message) before touching the port. */
+    if (w->pick_head != w->pick_tail) {
+        memset(out, 0, sizeof(*out));
+        out->kind = GPA_EVENT_MENUPICK;
+        out->code = w->picks[w->pick_head];
+        w->pick_head = (w->pick_head + 1) % GPA_PICK_QUEUE;
+        return 1;
+    }
 
     struct IntuiMessage *im;
     while ((im = (struct IntuiMessage *)GetMsg(w->win->UserPort))) {
@@ -274,8 +345,31 @@ int gpa_poll_event(void *handle, GpaEvent *out)
                 break;
             }
             break;
+        case IDCMP_MENUPICK: {
+            /* Queue every selection of the drag (NextSelect chain); the
+             * first one is returned below, the rest on later polls. */
+            UWORD sel = im->Code;
+            while (sel != MENUNULL && w->menustrip) {
+                struct MenuItem *item = ItemAddress(w->menustrip, sel);
+                if (!item)
+                    break;
+                int next = (w->pick_tail + 1) % GPA_PICK_QUEUE;
+                if (next == w->pick_head)
+                    break; /* queue full; drop the tail of the chain */
+                w->picks[w->pick_tail] =
+                    (int)(IPTR)GTMENUITEM_USERDATA(item);
+                w->pick_tail = next;
+                sel = item->NextSelect;
+            }
+            if (w->pick_head != w->pick_tail) {
+                kind = GPA_EVENT_MENUPICK;
+                code = w->picks[w->pick_head];
+                w->pick_head = (w->pick_head + 1) % GPA_PICK_QUEUE;
+            }
+            break;
+        }
         case IDCMP_RAWKEY: {
-            
+
             kind = GPA_EVENT_RAWKEY;
             /* Map while the message (and its IAddress dead-key context) is
              * still valid — ReplyMsg comes right after this switch. Key-ups
@@ -530,4 +624,312 @@ int gpa_screen_size(int *out_w, int *out_h)
         *out_h = screen->Height;
     UnlockPubScreen(NULL, screen);
     return 0;
+}
+
+/* Programmatic resize (PlatformWindow::resize / automation). Intuition
+ * answers asynchronously with IDCMP_NEWSIZE, which drives the usual
+ * renderer/GPUI resize path. */
+void gpa_set_size(void *handle, int inner_w, int inner_h)
+{
+    GpaWindow *w = handle;
+    if (!w || !w->win || inner_w < 1 || inner_h < 1)
+        return;
+    ChangeWindowBox(w->win, w->win->LeftEdge, w->win->TopEdge,
+                    inner_w + w->win->BorderLeft + w->win->BorderRight,
+                    inner_h + w->win->BorderTop + w->win->BorderBottom);
+}
+
+/* ---- Menus (gadtools NewMenu -> SetMenuStrip) --------------------------
+ *
+ * The Rust side flattens gpui's menu tree into a level/id/label array; this
+ * builds the strip the native way: gadtools CreateMenus + LayoutMenus with
+ * the screen's visual info, then SetMenuStrip. Item ids travel in
+ * nm_UserData and come back on IDCMP_MENUPICK (queued, NextSelect-aware).
+ * The menu bar is per window on Amiga (right mouse on the title bar), so
+ * the platform applies the same spec to every window. */
+
+typedef struct GpaMenuSpec {
+    int level;           /* 0 = menu title, 1 = item, 2 = sub-item */
+    int id;              /* action id; -1 = separator (label ignored) */
+    const char *label;   /* system charset */
+    const char *commkey; /* single-char Amiga command key or NULL */
+    int disabled;
+    int checked;
+} GpaMenuSpec;
+
+int gpa_set_menus(void *handle, const GpaMenuSpec *specs, int count)
+{
+    GpaWindow *w = handle;
+    if (!w || !w->win || !GadToolsBase || count < 0)
+        return -1;
+
+    gpa_free_menus(w);
+    if (count == 0)
+        return 0;
+
+    struct NewMenu *nm =
+        AllocVec(sizeof(struct NewMenu) * (count + 1), MEMF_ANY | MEMF_CLEAR);
+    /* Worst case two strings (label + commkey) per entry. */
+    char **strs = AllocVec(sizeof(char *) * count * 2, MEMF_ANY | MEMF_CLEAR);
+    if (!nm || !strs) {
+        FreeVec(nm);
+        FreeVec(strs);
+        return -1;
+    }
+    int nstrs = 0;
+
+    for (int i = 0; i < count; i++) {
+        const GpaMenuSpec *s = &specs[i];
+        struct NewMenu *n = &nm[i];
+        n->nm_Type = (s->level <= 0) ? NM_TITLE
+                     : (s->level == 1) ? NM_ITEM
+                                       : NM_SUB;
+        if (s->id < 0 && s->level > 0) {
+            n->nm_Label = NM_BARLABEL;
+        } else {
+            char *copy = gpa_strdup(s->label ? s->label : "");
+            if (copy)
+                strs[nstrs++] = copy;
+            n->nm_Label = copy ? copy : (char *)"";
+        }
+        if (s->commkey && s->commkey[0]) {
+            char *ck = gpa_strdup(s->commkey);
+            if (ck)
+                strs[nstrs++] = ck;
+            n->nm_CommKey = ck;
+        }
+        if (s->disabled)
+            n->nm_Flags |= (s->level <= 0) ? NM_MENUDISABLED : NM_ITEMDISABLED;
+        if (s->checked && s->level > 0)
+            n->nm_Flags |= CHECKIT | CHECKED;
+        n->nm_UserData = (APTR)(IPTR)s->id;
+    }
+    nm[count].nm_Type = NM_END;
+
+    w->vi = GetVisualInfoA(w->win->WScreen, NULL);
+    struct Menu *strip = w->vi ? CreateMenusA(nm, NULL) : NULL;
+    int ok = 0;
+    if (strip && LayoutMenusA(strip, w->vi, NULL)
+        && SetMenuStrip(w->win, strip)) {
+        w->menustrip = strip;
+        w->menu_strs = strs;
+        w->menu_str_count = nstrs;
+        ok = 1;
+    }
+    FreeVec(nm);
+    if (!ok) {
+        if (strip)
+            FreeMenus(strip);
+        if (w->vi) {
+            FreeVisualInfo(w->vi);
+            w->vi = NULL;
+        }
+        for (int i = 0; i < nstrs; i++)
+            FreeVec(strs[i]);
+        FreeVec(strs);
+        return -1;
+    }
+    return 0;
+}
+
+/* ---- Pointer styles (Intuition pointerclass) ---------------------------
+ *
+ * This AROS has no named POINTERTYPE_* set — custom pointers are 16x16,
+ * 2-bitplane images on pointerclass objects. A small hand-drawn set covers
+ * gpui's CursorStyle groups; style 0 restores the Intuition default via
+ * ClearPointer. Objects are built lazily and shared by every window. */
+
+enum {
+    GPA_PTR_DEFAULT = 0,
+    GPA_PTR_IBEAM = 1,
+    GPA_PTR_CROSS = 2,
+    GPA_PTR_HAND = 3,
+    GPA_PTR_SIZEH = 4,
+    GPA_PTR_SIZEV = 5,
+    GPA_PTR_SIZED1 = 6, /* up-left / down-right */
+    GPA_PTR_SIZED2 = 7, /* up-right / down-left */
+    GPA_PTR_NO = 8,
+    GPA_PTR_COUNT = 9,
+};
+
+/* Row-per-UWORD plane data. Plane 1 alone = outline pen, planes 1+2 = the
+ * solid body pen — both visible on light and dark screens. Hotspots below. */
+static UWORD gpa_ptr_img[GPA_PTR_COUNT][2][16] = {
+    [GPA_PTR_IBEAM] = {
+        { 0x6300, 0x1C00, 0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x0800,
+          0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x1C00, 0x6300, 0x0000 },
+        { 0x6300, 0x1C00, 0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x0800,
+          0x0800, 0x0800, 0x0800, 0x0800, 0x0800, 0x1C00, 0x6300, 0x0000 },
+    },
+    [GPA_PTR_CROSS] = {
+        { 0x0200, 0x0200, 0x0200, 0x0200, 0x0200, 0x0200, 0xFFFC, 0x0200,
+          0x0200, 0x0200, 0x0200, 0x0200, 0x0200, 0x0000, 0x0000, 0x0000 },
+        { 0x0200, 0x0200, 0x0200, 0x0200, 0x0200, 0x0200, 0xFFFC, 0x0200,
+          0x0200, 0x0200, 0x0200, 0x0200, 0x0200, 0x0000, 0x0000, 0x0000 },
+    },
+    [GPA_PTR_HAND] = {
+        { 0x0C00, 0x1200, 0x1200, 0x1200, 0x13C0, 0x1278, 0x124E, 0x724A,
+          0x9A4A, 0x8A4A, 0x4002, 0x2002, 0x2004, 0x1004, 0x0FF8, 0x0000 },
+        { 0x0C00, 0x1E00, 0x1E00, 0x1E00, 0x1FC0, 0x1E78, 0x1FCE, 0x7FFA,
+          0xFFFA, 0xFFFA, 0x7FFE, 0x3FFE, 0x3FFC, 0x1FFC, 0x0FF8, 0x0000 },
+    },
+    [GPA_PTR_SIZEH] = {
+        { 0x0000, 0x0000, 0x0000, 0x0810, 0x1818, 0x381C, 0x7FFE, 0x381C,
+          0x1818, 0x0810, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+        { 0x0000, 0x0000, 0x0000, 0x0810, 0x1818, 0x381C, 0x7FFE, 0x381C,
+          0x1818, 0x0810, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+    },
+    [GPA_PTR_SIZEV] = {
+        { 0x0100, 0x0380, 0x07C0, 0x0FE0, 0x0100, 0x0100, 0x0100, 0x0100,
+          0x0100, 0x0100, 0x0100, 0x0FE0, 0x07C0, 0x0380, 0x0100, 0x0000 },
+        { 0x0100, 0x0380, 0x07C0, 0x0FE0, 0x0100, 0x0100, 0x0100, 0x0100,
+          0x0100, 0x0100, 0x0100, 0x0FE0, 0x07C0, 0x0380, 0x0100, 0x0000 },
+    },
+    [GPA_PTR_SIZED1] = {
+        { 0x7C00, 0x7000, 0x6800, 0x4400, 0x0200, 0x0100, 0x0080, 0x0040,
+          0x0020, 0x0110, 0x008A, 0x0046, 0x002E, 0x003E, 0x0000, 0x0000 },
+        { 0x7C00, 0x7000, 0x6800, 0x4400, 0x0200, 0x0100, 0x0080, 0x0040,
+          0x0020, 0x0110, 0x008A, 0x0046, 0x002E, 0x003E, 0x0000, 0x0000 },
+    },
+    [GPA_PTR_SIZED2] = {
+        { 0x003E, 0x000E, 0x0016, 0x0022, 0x0040, 0x0080, 0x0100, 0x0200,
+          0x0400, 0x8800, 0x5100, 0x6200, 0x7400, 0x7C00, 0x0000, 0x0000 },
+        { 0x003E, 0x000E, 0x0016, 0x0022, 0x0040, 0x0080, 0x0100, 0x0200,
+          0x0400, 0x8800, 0x5100, 0x6200, 0x7400, 0x7C00, 0x0000, 0x0000 },
+    },
+    [GPA_PTR_NO] = {
+        { 0x0FE0, 0x3018, 0x4C04, 0x8602, 0x8302, 0x8182, 0x80C2, 0x8062,
+          0x4034, 0x3018, 0x0FE0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+        { 0x0FE0, 0x3FF8, 0x7C7C, 0xFE3E, 0xFF3E, 0xFFBE, 0xFFDE, 0xFFEE,
+          0x7FF4, 0x3FF8, 0x0FE0, 0x0000, 0x0000, 0x0000, 0x0000, 0x0000 },
+    },
+};
+
+static const struct { int x, y; } gpa_ptr_hot[GPA_PTR_COUNT] = {
+    [GPA_PTR_IBEAM] = { 4, 7 },  [GPA_PTR_CROSS] = { 6, 6 },
+    [GPA_PTR_HAND] = { 5, 0 },   [GPA_PTR_SIZEH] = { 7, 6 },
+    [GPA_PTR_SIZEV] = { 7, 7 },  [GPA_PTR_SIZED1] = { 7, 7 },
+    [GPA_PTR_SIZED2] = { 7, 7 }, [GPA_PTR_NO] = { 5, 5 },
+};
+
+static struct BitMap gpa_ptr_bm[GPA_PTR_COUNT];
+static Object *gpa_ptr_obj[GPA_PTR_COUNT];
+
+static Object *gpa_pointer_object(int style)
+{
+    if (style <= GPA_PTR_DEFAULT || style >= GPA_PTR_COUNT)
+        return NULL;
+    if (gpa_ptr_obj[style])
+        return gpa_ptr_obj[style];
+
+    struct BitMap *bm = &gpa_ptr_bm[style];
+    bm->BytesPerRow = 2;
+    bm->Rows = 16;
+    bm->Depth = 2;
+    bm->Planes[0] = (PLANEPTR)gpa_ptr_img[style][0];
+    bm->Planes[1] = (PLANEPTR)gpa_ptr_img[style][1];
+
+    gpa_ptr_obj[style] = (Object *)NewObject(NULL, "pointerclass",
+        POINTERA_BitMap, (IPTR)bm,
+        POINTERA_XOffset, -gpa_ptr_hot[style].x,
+        POINTERA_YOffset, -gpa_ptr_hot[style].y,
+        POINTERA_WordWidth, 1,
+        POINTERA_XResolution, POINTERXRESN_SCREENRES,
+        POINTERA_YResolution, POINTERYRESN_SCREENRES,
+        TAG_DONE);
+    return gpa_ptr_obj[style];
+}
+
+void gpa_set_pointer(void *handle, int style)
+{
+    GpaWindow *w = handle;
+    if (!w || !w->win)
+        return;
+    Object *obj = gpa_pointer_object(style);
+    if (obj)
+        SetWindowPointer(w->win, WA_Pointer, (IPTR)obj, TAG_DONE);
+    else
+        ClearPointer(w->win); /* default arrow (and unknown styles) */
+}
+
+/* ---- File requesters (asl.library) -------------------------------------
+ *
+ * Blocking, main-thread: AslRequest runs the requester's inner event loop
+ * in the calling task; our window simply doesn't repaint while the (modal)
+ * requester is up. Returns 0 and an AllocVec'd, NUL-separated,
+ * double-NUL-terminated path list on OK; -1 on cancel/failure. */
+
+int gpa_asl_request_paths(int save_mode, int drawers_only, int multiselect,
+                          const char *initial_drawer,
+                          const char *initial_file, const char *title,
+                          void **out, int *out_len)
+{
+    *out = NULL;
+    *out_len = 0;
+    if (gpa_init() != 0 || !AslBase)
+        return -1;
+
+    struct FileRequester *fr = AllocAslRequestTags(ASL_FileRequest,
+        ASLFR_TitleText, (IPTR)(title ? title : "Select"),
+        ASLFR_InitialDrawer, (IPTR)(initial_drawer ? initial_drawer : ""),
+        ASLFR_InitialFile, (IPTR)(initial_file ? initial_file : ""),
+        ASLFR_DoSaveMode, save_mode ? TRUE : FALSE,
+        ASLFR_DrawersOnly, drawers_only ? TRUE : FALSE,
+        ASLFR_DoMultiSelect, (multiselect && !drawers_only) ? TRUE : FALSE,
+        TAG_DONE);
+    if (!fr)
+        return -1;
+
+    int rc = -1;
+    if (AslRequestTags(fr, TAG_DONE)) {
+        /* Assemble "drawer/file" paths with AddPart into one buffer. */
+        ULONG cap = 4096;
+        UBYTE *buf = AllocVec(cap, MEMF_ANY);
+        ULONG used = 0;
+        char path[1024];
+
+        int nargs = (multiselect && fr->fr_ArgList && fr->fr_NumArgs > 0)
+            ? fr->fr_NumArgs
+            : 1;
+        for (int i = 0; buf && i < nargs; i++) {
+            const char *leaf = (nargs > 1 || (multiselect && fr->fr_ArgList))
+                ? (const char *)fr->fr_ArgList[i].wa_Name
+                : (const char *)fr->fr_File;
+            path[0] = 0;
+            if (fr->fr_Drawer) {
+                strncpy(path, (const char *)fr->fr_Drawer, sizeof(path) - 1);
+                path[sizeof(path) - 1] = 0;
+            }
+            if (!drawers_only && leaf && leaf[0]) {
+                if (!AddPart((STRPTR)path, (CONST_STRPTR)leaf, sizeof(path)))
+                    continue;
+            }
+            ULONG plen = strlen(path) + 1;
+            if (used + plen + 1 > cap) {
+                ULONG ncap = cap * 2 + plen;
+                UBYTE *nbuf = AllocVec(ncap, MEMF_ANY);
+                if (!nbuf) {
+                    FreeVec(buf);
+                    buf = NULL;
+                    break;
+                }
+                memcpy(nbuf, buf, used);
+                FreeVec(buf);
+                buf = nbuf;
+                cap = ncap;
+            }
+            memcpy(buf + used, path, plen);
+            used += plen;
+        }
+        if (buf && used) {
+            buf[used++] = 0; /* double-NUL terminator */
+            *out = buf;
+            *out_len = (int)used;
+            rc = 0;
+        } else {
+            FreeVec(buf);
+        }
+    }
+    FreeAslRequest(fr);
+    return rc;
 }

@@ -26,12 +26,19 @@ use tiny_skia::{
 };
 
 use crate::atlas::CpuAtlas;
+use crate::damage::{self, DamageRect, Fingerprint};
 
 pub(crate) struct CpuRenderer {
     pixmap: Pixmap,
     atlas: Arc<CpuAtlas>,
     clip_key: Option<ClipKey>,
     clip_mask: Option<Mask>,
+    /// Last frame's primitive fingerprints (paint order); empty = the next
+    /// draw repaints everything. See `damage.rs`.
+    prev_frame: Vec<Fingerprint>,
+    /// The region being repainted during the current `draw` — every clip
+    /// mask is intersected with it.
+    damage: Option<DamageRect>,
 }
 
 type ClipKey = (i32, i32, i32, i32);
@@ -44,7 +51,15 @@ impl CpuRenderer {
             atlas: Arc::new(CpuAtlas::new()),
             clip_key: None,
             clip_mask: None,
+            prev_frame: Vec::new(),
+            damage: None,
         }
+    }
+
+    /// Force the next `draw` to repaint and re-blit the whole window
+    /// (window freshly exposed, external damage, ...).
+    pub(crate) fn invalidate(&mut self) {
+        self.prev_frame.clear();
     }
 
     pub(crate) fn sprite_atlas(&self) -> Arc<CpuAtlas> {
@@ -73,6 +88,7 @@ impl CpuRenderer {
             self.pixmap = Pixmap::new(w, h).expect("failed to allocate framebuffer pixmap");
             self.clip_key = None;
             self.clip_mask = None;
+            self.prev_frame.clear();
         }
     }
 
@@ -90,45 +106,111 @@ impl CpuRenderer {
         self.pixmap.height()
     }
 
-    pub(crate) fn draw(&mut self, scene: &Scene) {
-        self.pixmap.fill(Color::BLACK);
+    /// Rasterize what changed since the previous frame. Returns the
+    /// repainted rect (clamped, device pixels) for the caller to blit, or
+    /// `None` when the frames are identical and nothing needs uploading.
+    pub(crate) fn draw(&mut self, scene: &Scene) -> Option<DamageRect> {
+        let full = DamageRect {
+            x0: 0,
+            y0: 0,
+            x1: self.pixmap.width() as i32,
+            y1: self.pixmap.height() as i32,
+        };
+        let current = damage::capture(scene);
+        let damage = if self.prev_frame.is_empty() {
+            Some(full)
+        } else {
+            damage::diff(&self.prev_frame, &current)
+        };
+        let Some(damage) = damage.map(|d| d.intersect(full)).filter(|d| !d.is_empty()) else {
+            self.prev_frame = current;
+            return None;
+        };
+
+        // Repaint the damage region only: it becomes part of every clip
+        // (update_clip), non-overlapping primitives are rejected up front
+        // via the fingerprints (same paint order as the loop below), and
+        // painter's order within the region stays intact.
+        self.damage = Some(damage);
+        self.clip_key = None;
+        self.clip_mask = None;
+        if let Some(rect) = Rect::from_xywh(
+            damage.x0 as f32,
+            damage.y0 as f32,
+            (damage.x1 - damage.x0) as f32,
+            (damage.y1 - damage.y0) as f32,
+        ) {
+            let mut paint = Paint::default();
+            paint.set_color(Color::BLACK);
+            paint.blend_mode = tiny_skia::BlendMode::Source;
+            paint.anti_alias = false;
+            self.pixmap
+                .fill_rect(rect, &paint, Transform::identity(), None);
+        }
+
+        let mut index = 0usize;
+        let touches = |fingerprints: &[Fingerprint], index: &mut usize| {
+            let hit = fingerprints
+                .get(*index)
+                .is_none_or(|fp| fp.rect().intersects(&damage));
+            *index += 1;
+            hit
+        };
 
         for batch in scene.batches() {
             match batch {
                 PrimitiveBatch::Shadows(range) => {
                     for shadow in &scene.shadows[range] {
-                        self.draw_shadow(shadow);
+                        if touches(&current, &mut index) {
+                            self.draw_shadow(shadow);
+                        }
                     }
                 }
                 PrimitiveBatch::Quads(range) => {
                     for quad in &scene.quads[range] {
-                        self.draw_quad(quad);
+                        if touches(&current, &mut index) {
+                            self.draw_quad(quad);
+                        }
                     }
                 }
                 PrimitiveBatch::Paths(range) => {
                     for path in &scene.paths[range] {
-                        self.draw_path(path);
+                        if touches(&current, &mut index) {
+                            self.draw_path(path);
+                        }
                     }
                 }
                 PrimitiveBatch::Underlines(range) => {
                     for underline in &scene.underlines[range] {
-                        self.draw_underline(underline);
+                        if touches(&current, &mut index) {
+                            self.draw_underline(underline);
+                        }
                     }
                 }
                 PrimitiveBatch::MonochromeSprites { range, .. } => {
                     for sprite in &scene.monochrome_sprites[range] {
-                        self.draw_monochrome_sprite(sprite);
+                        if touches(&current, &mut index) {
+                            self.draw_monochrome_sprite(sprite);
+                        }
                     }
                 }
                 PrimitiveBatch::PolychromeSprites { range, .. } => {
                     for sprite in &scene.polychrome_sprites[range] {
-                        self.draw_polychrome_sprite(sprite);
+                        if touches(&current, &mut index) {
+                            self.draw_polychrome_sprite(sprite);
+                        }
                     }
                 }
                 // Surfaces are mac-only video frames — never emitted here.
                 _ => {}
             }
         }
+
+        self.damage = None;
+        self.clip_key = None;
+        self.clip_mask = None;
+        self.prev_frame = current;
+        Some(damage)
     }
 
     fn draw_quad(&mut self, quad: &Quad) {
@@ -513,10 +595,19 @@ impl CpuRenderer {
     /// the whole framebuffer sets no mask (`clip_mask = None`).
     fn update_clip(&mut self, content_mask: &ContentMask<ScaledPixels>) {
         let b = &content_mask.bounds;
-        let x0 = b.origin.x.0.floor() as i32;
-        let y0 = b.origin.y.0.floor() as i32;
-        let x1 = (b.origin.x.0 + b.size.width.0).ceil() as i32;
-        let y1 = (b.origin.y.0 + b.size.height.0).ceil() as i32;
+        let mut x0 = b.origin.x.0.floor() as i32;
+        let mut y0 = b.origin.y.0.floor() as i32;
+        let mut x1 = (b.origin.x.0 + b.size.width.0).ceil() as i32;
+        let mut y1 = (b.origin.y.0 + b.size.height.0).ceil() as i32;
+        // Partial repaint: nothing may paint outside the damage region, or
+        // primitives straddling its edge would smear over pixels that are
+        // not re-blitted... and over ones that are, out of paint order.
+        if let Some(damage) = self.damage {
+            x0 = x0.max(damage.x0);
+            y0 = y0.max(damage.y0);
+            x1 = x1.min(damage.x1);
+            y1 = y1.min(damage.y1);
+        }
         let key = (x0, y0, x1, y1);
 
         let w = self.pixmap.width() as i32;

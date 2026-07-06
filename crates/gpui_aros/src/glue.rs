@@ -31,6 +31,9 @@ pub(crate) const GPA_EVENT_MOUSEMOVE: c_int = 4;
 pub(crate) const GPA_EVENT_MOUSEDOWN: c_int = 5;
 pub(crate) const GPA_EVENT_MOUSEUP: c_int = 6;
 pub(crate) const GPA_EVENT_RAWKEY: c_int = 7;
+/// `code` = the item id passed to `gpa_set_menus` (an index into the
+/// platform's action registry).
+pub(crate) const GPA_EVENT_MENUPICK: c_int = 8;
 
 /// Mouse-button codes carried in `GpaEvent::code` for mousedown/up.
 pub(crate) const GPA_BUTTON_LEFT: c_int = 0;
@@ -92,4 +95,49 @@ unsafe extern "C" {
 
     /// Free a buffer handed out by the glue (AllocVec-backed).
     pub(crate) fn gpa_free(p: *mut c_void);
+
+    /// Programmatic inner-size change (ChangeWindowBox); Intuition answers
+    /// asynchronously with a NEWSIZE event.
+    pub(crate) fn gpa_set_size(handle: *mut c_void, inner_w: c_int, inner_h: c_int);
+
+    /// Replace the window's menu strip with the flattened spec (gadtools
+    /// NewMenu built + laid out natively). Empty count clears the strip.
+    pub(crate) fn gpa_set_menus(
+        handle: *mut c_void,
+        specs: *const GpaMenuSpec,
+        count: c_int,
+    ) -> c_int;
+
+    /// Set one of the shared pointerclass pointers (GPA_PTR_* in the glue);
+    /// 0 restores the Intuition default arrow.
+    pub(crate) fn gpa_set_pointer(handle: *mut c_void, style: c_int);
+
+    /// Blocking asl.library file requester. On success (0) hands out an
+    /// AllocVec'd NUL-separated, double-NUL-terminated path list
+    /// (`gpa_free` it). Cancel/failure returns -1.
+    pub(crate) fn gpa_asl_request_paths(
+        save_mode: c_int,
+        drawers_only: c_int,
+        multiselect: c_int,
+        initial_drawer: *const c_char,
+        initial_file: *const c_char,
+        title: *const c_char,
+        out: *mut *mut c_void,
+        out_len: *mut c_int,
+    ) -> c_int;
+}
+
+/// Mirrors `struct GpaMenuSpec` in the C glue: one flattened menu entry.
+#[repr(C)]
+pub(crate) struct GpaMenuSpec {
+    /// 0 = menu title, 1 = item, 2 = sub-item.
+    pub level: c_int,
+    /// Action-registry index; -1 = separator / not pickable.
+    pub id: c_int,
+    /// System charset (ISO-8859-1), NUL-terminated.
+    pub label: *const c_char,
+    /// Single-char Amiga command key, or null.
+    pub commkey: *const c_char,
+    pub disabled: c_int,
+    pub checked: c_int,
 }

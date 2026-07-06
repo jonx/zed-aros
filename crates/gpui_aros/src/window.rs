@@ -18,8 +18,9 @@ use raw_window_handle::{
     DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle,
 };
 
-use crate::glue::{self, GpaEvent};
+use crate::glue::{self, GpaEvent, GpaMenuSpec};
 use crate::input::{self, key_name, latin1_to_string, modifiers_from_qualifier};
+use crate::menus::MenuState;
 use crate::renderer::CpuRenderer;
 
 #[derive(Default)]
@@ -56,6 +57,9 @@ pub(crate) struct ArosWindowInner {
     callbacks: RefCell<ArosWindowCallbacks>,
     display: Rc<dyn PlatformDisplay>,
     atlas: Arc<dyn PlatformAtlas>,
+    /// Shared with the platform: the flattened menu spec + action registry
+    /// + gpui's app-menu-action callback (see `menus.rs`).
+    menu_state: Rc<RefCell<MenuState>>,
 }
 
 impl Drop for ArosWindowInner {
@@ -79,6 +83,7 @@ impl ArosWindow {
         handle: AnyWindowHandle,
         params: WindowParams,
         display: Rc<dyn PlatformDisplay>,
+        menu_state: Rc<RefCell<MenuState>>,
     ) -> anyhow::Result<Self> {
         let bounds = params.bounds;
         let width = f32::from(bounds.size.width).max(1.0) as i32;
@@ -127,7 +132,12 @@ impl ArosWindow {
             callbacks: RefCell::new(ArosWindowCallbacks::default()),
             display,
             atlas,
+            menu_state,
         });
+
+        // Menus set before this window existed apply to it too (the strip
+        // is per window on Amiga).
+        inner.apply_menus();
 
         Ok(Self { inner, handle })
     }
@@ -180,7 +190,12 @@ impl ArosWindowInner {
         match event.kind {
             glue::GPA_EVENT_CLOSE => self.handle_close(),
             glue::GPA_EVENT_NEWSIZE => self.handle_resize(),
-            glue::GPA_EVENT_REFRESH => self.request_frame(),
+            glue::GPA_EVENT_REFRESH => {
+                // Externally damaged (exposed) — the diff won't see it, so
+                // force a full repaint + re-blit.
+                self.state.borrow_mut().renderer.invalidate();
+                self.request_frame()
+            }
             glue::GPA_EVENT_MOUSEMOVE => {
                 let position = self.set_mouse_position(event.x, event.y);
                 let modifiers = self.state.borrow().modifiers;
@@ -217,7 +232,67 @@ impl ArosWindowInner {
                 }));
             }
             glue::GPA_EVENT_RAWKEY => self.handle_rawkey(event),
+            glue::GPA_EVENT_MENUPICK => self.handle_menu_pick(event.code),
             _ => {}
+        }
+    }
+
+    /// Rebuild this window's Intuition menu strip from the shared spec
+    /// (no-op while the spec is empty).
+    pub(crate) fn apply_menus(&self) {
+        let handle = self.state.borrow().handle;
+        if handle.is_null() {
+            return;
+        }
+        let menu_state = self.menu_state.borrow();
+        let specs: Vec<GpaMenuSpec> = menu_state
+            .spec
+            .iter()
+            .map(|item| GpaMenuSpec {
+                level: item.level,
+                id: item.id,
+                label: item.label.as_ptr(),
+                commkey: item
+                    .commkey
+                    .as_ref()
+                    .map_or(std::ptr::null(), |c| c.as_ptr()),
+                disabled: item.disabled as c_int,
+                checked: item.checked as c_int,
+            })
+            .collect();
+        if specs.is_empty() {
+            return;
+        }
+        // SAFETY: valid handle; the CStrings behind the pointers live in
+        // `menu_state.spec`, held borrowed across the call, and the glue
+        // copies everything it keeps.
+        unsafe { glue::gpa_set_menus(handle, specs.as_ptr(), specs.len() as c_int) };
+    }
+
+    /// A menu item was picked: route the registered action through gpui's
+    /// `on_app_menu_action` callback. The callback is taken out for the
+    /// call so a reentrant `set_menus` from the action can't double-borrow.
+    fn handle_menu_pick(&self, id: c_int) {
+        if id < 0 {
+            return;
+        }
+        let (action, mut callback) = {
+            let mut menu_state = self.menu_state.borrow_mut();
+            let action = menu_state
+                .actions
+                .get(id as usize)
+                .map(|a| a.boxed_clone());
+            let callback = menu_state.on_action.take();
+            (action, callback)
+        };
+        if let (Some(action), Some(f)) = (&action, callback.as_mut()) {
+            f(action.as_ref());
+        }
+        if let Some(f) = callback {
+            let mut menu_state = self.menu_state.borrow_mut();
+            if menu_state.on_action.is_none() {
+                menu_state.on_action = Some(f);
+            }
         }
     }
 
@@ -309,6 +384,16 @@ impl ArosWindowInner {
                 prefer_character_input: false,
             }));
         }
+    }
+
+    /// Set one of the glue's shared pointerclass pointers (0 = default).
+    pub(crate) fn set_pointer(&self, style: c_int) {
+        let handle = self.state.borrow().handle;
+        if handle.is_null() {
+            return;
+        }
+        // SAFETY: valid handle; the glue owns the pointer objects.
+        unsafe { glue::gpa_set_pointer(handle, style) };
     }
 
     fn set_mouse_position(&self, x: c_int, y: c_int) -> Point<Pixels> {
@@ -413,9 +498,13 @@ impl PlatformWindow for ArosWindow {
         self.inner.state.borrow().bounds.size
     }
 
-    fn resize(&mut self, _size: Size<Pixels>) {
-        // The user resizes AROS windows via the size gadget; programmatic
-        // resize is a no-op (best-effort).
+    fn resize(&mut self, size: Size<Pixels>) {
+        let handle = self.inner.state.borrow().handle;
+        let w = f32::from(size.width).max(1.0) as c_int;
+        let h = f32::from(size.height).max(1.0) as c_int;
+        // SAFETY: valid handle. ChangeWindowBox is asynchronous; the
+        // NEWSIZE event drives the renderer/GPUI resize path.
+        unsafe { glue::gpa_set_size(handle, w, h) };
     }
 
     fn scale_factor(&self) -> f32 {
@@ -542,22 +631,26 @@ impl PlatformWindow for ArosWindow {
         if state.closed {
             return;
         }
-        state.renderer.draw(scene);
-        let width = state.renderer.width() as i32;
-        let height = state.renderer.height() as i32;
-        let stride = width * 4;
+        // Dirty-rect repaint: the renderer diffs the scene against the
+        // previous frame and rasterizes only the damaged region; None means
+        // an identical frame — no raster, no blit.
+        let Some(damage) = state.renderer.draw(scene) else {
+            return;
+        };
+        let stride = state.renderer.width() as i32 * 4;
         let handle = state.handle;
         let data = state.renderer.framebuffer();
-        // SAFETY: valid handle; data is width*height*4 tightly-rowed RGBA.
+        // SAFETY: valid handle; data is the full framebuffer, and the glue
+        // blits the (x, y, w, h) subrect out of it (same stride).
         unsafe {
             glue::gpa_blit(
                 handle,
                 data.as_ptr() as *const c_void,
                 stride,
-                0,
-                0,
-                width,
-                height,
+                damage.x0,
+                damage.y0,
+                damage.x1 - damage.x0,
+                damage.y1 - damage.y0,
             );
         }
     }

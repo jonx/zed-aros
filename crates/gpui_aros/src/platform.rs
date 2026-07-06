@@ -17,6 +17,7 @@ use gpui::{
 
 use crate::dispatcher::ArosDispatcher;
 use crate::display::ArosDisplay;
+use crate::menus::{MenuState, to_latin1};
 use crate::text;
 use crate::window::{ArosWindow, ArosWindowInner};
 
@@ -28,7 +29,6 @@ struct PlatformCallbacks {
     open_urls: Option<Box<dyn FnMut(Vec<String>)>>,
     quit: Option<Box<dyn FnMut()>>,
     reopen: Option<Box<dyn FnMut()>>,
-    app_menu_action: Option<Box<dyn FnMut(&dyn Action)>>,
     will_open_app_menu: Option<Box<dyn FnMut()>>,
     validate_app_menu_command: Option<Box<dyn FnMut(&dyn Action) -> bool>>,
     keyboard_layout_change: Option<Box<dyn FnMut()>>,
@@ -44,6 +44,7 @@ pub struct ArosPlatform {
     windows: RefCell<Vec<Weak<ArosWindowInner>>>,
     active_window: RefCell<Option<AnyWindowHandle>>,
     callbacks: RefCell<PlatformCallbacks>,
+    menu_state: Rc<RefCell<MenuState>>,
     quit_requested: Cell<bool>,
     cursor_visible: Cell<bool>,
     #[allow(dead_code)]
@@ -71,6 +72,7 @@ impl ArosPlatform {
             windows: RefCell::new(Vec::new()),
             active_window: RefCell::new(None),
             callbacks: RefCell::new(PlatformCallbacks::default()),
+            menu_state: Rc::new(RefCell::new(MenuState::default())),
             quit_requested: Cell::new(false),
             cursor_visible: Cell::new(true),
             headless,
@@ -182,7 +184,8 @@ impl Platform for ArosPlatform {
         handle: AnyWindowHandle,
         options: WindowParams,
     ) -> Result<Box<dyn PlatformWindow>> {
-        let window = ArosWindow::open(handle, options, self.display.clone())?;
+        let window =
+            ArosWindow::open(handle, options, self.display.clone(), self.menu_state.clone())?;
         self.windows.borrow_mut().push(Rc::downgrade(&window.inner()));
         *self.active_window.borrow_mut() = Some(handle);
         Ok(Box::new(window))
@@ -204,20 +207,44 @@ impl Platform for ArosPlatform {
 
     fn prompt_for_paths(
         &self,
-        _options: PathPromptOptions,
+        options: PathPromptOptions,
     ) -> oneshot::Receiver<Result<Option<Vec<PathBuf>>>> {
         let (tx, rx) = oneshot::channel();
-        tx.send(Ok(None)).ok();
+        // asl.library file requester, blocking on the main thread (the
+        // requester is modal; our windows just skip repaints meanwhile).
+        let dirs_only = options.directories && !options.files;
+        let title = options
+            .prompt
+            .as_ref()
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| "Select".into());
+        let paths = asl_request(AslRequest {
+            save_mode: false,
+            drawers_only: dirs_only,
+            multiselect: options.multiple,
+            initial_drawer: None,
+            initial_file: None,
+            title: &title,
+        });
+        tx.send(Ok(paths)).ok();
         rx
     }
 
     fn prompt_for_new_path(
         &self,
-        _directory: &Path,
-        _suggested_name: Option<&str>,
+        directory: &Path,
+        suggested_name: Option<&str>,
     ) -> oneshot::Receiver<Result<Option<PathBuf>>> {
         let (tx, rx) = oneshot::channel();
-        tx.send(Ok(None)).ok();
+        let paths = asl_request(AslRequest {
+            save_mode: true,
+            drawers_only: false,
+            multiselect: false,
+            initial_drawer: Some(&directory.to_string_lossy()),
+            initial_file: suggested_name,
+            title: "Save As",
+        });
+        tx.send(Ok(paths.and_then(|mut v| v.pop()))).ok();
         rx
     }
 
@@ -237,12 +264,19 @@ impl Platform for ArosPlatform {
         self.callbacks.borrow_mut().reopen = Some(callback);
     }
 
-    fn set_menus(&self, _menus: Vec<Menu>, _keymap: &Keymap) {}
+    fn set_menus(&self, menus: Vec<Menu>, keymap: &Keymap) {
+        self.menu_state.borrow_mut().rebuild(menus, keymap);
+        // The strip is per window on Amiga: apply to every live window;
+        // windows opened later pick the spec up in ArosWindow::open.
+        for window in self.live_windows() {
+            window.apply_menus();
+        }
+    }
 
     fn set_dock_menu(&self, _menu: Vec<MenuItem>, _keymap: &Keymap) {}
 
     fn on_app_menu_action(&self, callback: Box<dyn FnMut(&dyn Action)>) {
-        self.callbacks.borrow_mut().app_menu_action = Some(callback);
+        self.menu_state.borrow_mut().on_action = Some(callback);
     }
 
     fn on_will_open_app_menu(&self, callback: Box<dyn FnMut()>) {
@@ -275,7 +309,34 @@ impl Platform for ArosPlatform {
         ))
     }
 
-    fn set_cursor_style(&self, _style: CursorStyle) {}
+    fn set_cursor_style(&self, style: CursorStyle) {
+        // GPA_PTR_* codes in the C glue's pointerclass set.
+        let code = match style {
+            CursorStyle::Arrow => 0,
+            CursorStyle::IBeam | CursorStyle::IBeamCursorForVerticalLayout => 1,
+            CursorStyle::Crosshair => 2,
+            CursorStyle::PointingHand
+            | CursorStyle::OpenHand
+            | CursorStyle::ClosedHand
+            | CursorStyle::DragLink
+            | CursorStyle::DragCopy
+            | CursorStyle::ContextualMenu => 3,
+            CursorStyle::ResizeLeft
+            | CursorStyle::ResizeRight
+            | CursorStyle::ResizeLeftRight
+            | CursorStyle::ResizeColumn => 4,
+            CursorStyle::ResizeUp
+            | CursorStyle::ResizeDown
+            | CursorStyle::ResizeUpDown
+            | CursorStyle::ResizeRow => 5,
+            CursorStyle::ResizeUpLeftDownRight => 6,
+            CursorStyle::ResizeUpRightDownLeft => 7,
+            CursorStyle::OperationNotAllowed => 8,
+        };
+        for window in self.live_windows() {
+            window.set_pointer(code);
+        }
+    }
 
     fn hide_cursor_until_mouse_moves(&self) {
         self.cursor_visible.set(false);
@@ -363,5 +424,62 @@ impl PlatformKeyboardLayout for ArosKeyboardLayout {
 
     fn name(&self) -> &str {
         "US"
+    }
+}
+
+struct AslRequest<'a> {
+    save_mode: bool,
+    drawers_only: bool,
+    multiselect: bool,
+    initial_drawer: Option<&'a str>,
+    initial_file: Option<&'a str>,
+    title: &'a str,
+}
+
+/// Run the blocking asl.library file requester and decode the glue's
+/// NUL-separated path list (system charset -> UTF-8, latin-1 semantics).
+/// `None` = cancelled or asl unavailable.
+fn asl_request(req: AslRequest) -> Option<Vec<PathBuf>> {
+    fn latin1_cstring(s: &str) -> std::ffi::CString {
+        let mut bytes = to_latin1(s);
+        bytes.retain(|&b| b != 0);
+        std::ffi::CString::new(bytes).unwrap_or_default()
+    }
+
+    let drawer = latin1_cstring(req.initial_drawer.unwrap_or(""));
+    let file = latin1_cstring(req.initial_file.unwrap_or(""));
+    let title = latin1_cstring(req.title);
+
+    let mut buf: *mut std::ffi::c_void = std::ptr::null_mut();
+    let mut len: std::os::raw::c_int = 0;
+    // SAFETY: FFI; on success `buf` is an AllocVec'd NUL-separated,
+    // double-NUL-terminated list we must hand back to gpa_free.
+    unsafe {
+        if crate::glue::gpa_asl_request_paths(
+            req.save_mode as _,
+            req.drawers_only as _,
+            req.multiselect as _,
+            drawer.as_ptr(),
+            file.as_ptr(),
+            title.as_ptr(),
+            &mut buf,
+            &mut len,
+        ) != 0
+            || buf.is_null()
+        {
+            return None;
+        }
+        let bytes = std::slice::from_raw_parts(buf as *const u8, len.max(0) as usize);
+        let paths: Vec<PathBuf> = bytes
+            .split(|&b| b == 0)
+            .filter(|part| !part.is_empty())
+            .map(|part| {
+                // System charset is ISO-8859-1: bytes map 1:1 onto the
+                // first 256 Unicode scalars.
+                PathBuf::from(part.iter().map(|&b| b as char).collect::<String>())
+            })
+            .collect();
+        crate::glue::gpa_free(buf);
+        (!paths.is_empty()).then_some(paths)
     }
 }

@@ -16,6 +16,7 @@
 //! binary, which would break `cargo test` on the host.
 
 mod atlas;
+mod damage;
 pub mod input;
 mod renderer;
 
@@ -28,6 +29,8 @@ mod dispatcher;
 mod display;
 #[cfg(target_os = "aros")]
 mod glue;
+#[cfg(target_os = "aros")]
+mod menus;
 #[cfg(target_os = "aros")]
 mod platform;
 #[cfg(target_os = "aros")]
