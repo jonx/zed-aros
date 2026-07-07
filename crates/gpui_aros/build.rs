@@ -49,13 +49,23 @@ fn main() {
         return;
     }
 
-    // CC / CFLAGS come from the workspace .cargo/config.toml (host clang, ELF
-    // triple, large code model, x18 reserved, AROS SDK include paths).
-    // -Wno-pointer-sign matches the AROS C convention (STRPTR is unsigned
-    // char*; string literals are plain char*) — same flag the hosted/rust
-    // build scripts pass.
+    // CC + the non-path CFLAGS (host clang, ELF triple, large code model, x18
+    // reserved) come from the workspace .cargo/config.toml. The machine-specific
+    // pieces are set here so the tracked config stays path-free: the SDK include
+    // roots (from $AROS_BUILD, computed above) and the llvm-ar archiver (Apple ar
+    // silently makes empty archives from ELF objects) from $AROS_CROSSTOOLS
+    // (default ~/aros-crosstools). -Wno-pointer-sign matches the AROS C
+    // convention (STRPTR is unsigned char*; string literals are plain char*).
+    let aros_crosstools = env::var("AROS_CROSSTOOLS").unwrap_or_else(|_| {
+        format!("{}/aros-crosstools", env::var("HOME").unwrap_or_default())
+    });
     cc::Build::new()
         .file("c/gpui_aros_glue.c")
+        .archiver(format!("{aros_crosstools}/bin/llvm-ar"))
         .flag("-Wno-pointer-sign")
+        .include(include_root)
+        .include(format!("{include_root}/aros/posixc"))
+        .include(format!("{include_root}/aros/stdc"))
+        .include(format!("{aros_build}/bin/darwin-aarch64/AROS/Developer/include"))
         .compile("gpui_aros_glue");
 }
