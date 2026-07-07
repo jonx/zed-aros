@@ -43,7 +43,7 @@ echo "[link] compile harness smoke_main.c"
 
 # The rust-aros std's C shim layer (sys/*/aros.rs call these), same recipe
 # as hosted/rust/std-build.sh — fs/sync need the posixc include dir.
-RS="${AROS_RS:-/Users/jkn/Source/aros-aarch64/hosted/rust}"
+RS="${AROS_RS:-$HOME/Source/aros-aarch64/hosted/rust}"
 echo "[link] compile rust-aros std glues"
 "$CC" "${CFLAGS[@]}" -c "$RS/aros_net_glue.c" -o "$OUT/aros_net_glue.o"
 "$CC" "${CFLAGS[@]}" -I"$GEN/include/aros/posixc" -c "$RS/aros_fs_glue.c" -o "$OUT/aros_fs_glue.o"
