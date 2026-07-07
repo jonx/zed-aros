@@ -15,6 +15,8 @@
 #include <proto/gadtools.h>
 #include <proto/asl.h>
 #include <proto/dos.h>
+#include <proto/gpufx.h>
+#include <libraries/gpufx.h>
 
 #include <intuition/intuition.h>
 #include <intuition/pointerclass.h>
@@ -268,6 +270,63 @@ void gpa_blit(void *handle, const void *rgba, int src_stride_bytes, int x,
     WritePixelArray((APTR)rgba, x, y, src_stride_bytes, w->win->RPort,
                     w->win->BorderLeft + x, w->win->BorderTop + y, width,
                     height, RECTFMT_RGBA);
+}
+
+/* ---- Optional GPU dynamic-resolution present (gpufx.library) -------------
+ *
+ * For the opt-in dynamic-resolution mode (GPUI_AROS_RENDER_SCALE < 1): gpui
+ * renders the scene into a smaller drawable, and we GPU-upscale it to the
+ * window with gpufx.library instead of the CPU WritePixelArray. GfxFx_Scale
+ * carries its own CPU fallback, so once the library opens the call always
+ * works; if the library isn't installed at all, gpa_gpufx_available() reports
+ * 0 and the Rust side stays at scale 1 (the normal direct-blit path). */
+
+struct Library *GfxFxBase;
+static int gpa_gpufx_tried;
+static UBYTE *gpa_scale_buf;   /* grow-only window-size RGBA scratch */
+static int    gpa_scale_cap;
+
+int gpa_gpufx_available(void)
+{
+    if (!gpa_gpufx_tried) {
+        GfxFxBase = OpenLibrary((CONST_STRPTR)"gpufx.library", 0);
+        gpa_gpufx_tried = 1;
+    }
+    return GfxFxBase ? 1 : 0;
+}
+
+/* Bilinear-upscale a src_w x src_h RGBA buffer to the window's inner
+ * dst_w x dst_h and blit it. Returns 1 on success, 0 if gpufx is unavailable
+ * or a buffer alloc failed (caller then falls back to a direct blit). */
+int gpa_blit_scaled(void *handle, const void *src, int src_stride,
+                    int src_w, int src_h, int dst_w, int dst_h)
+{
+    GpaWindow *w = handle;
+    struct GfxFxScaleReq sc;
+    int need;
+
+    if (!w || !w->win || dst_w <= 0 || dst_h <= 0 || !gpa_gpufx_available())
+        return 0;
+
+    need = dst_w * dst_h * 4;
+    if (gpa_scale_cap < need) {
+        FreeVec(gpa_scale_buf);
+        gpa_scale_buf = AllocVec(need, MEMF_ANY);
+        gpa_scale_cap = gpa_scale_buf ? need : 0;
+    }
+    if (!gpa_scale_buf)
+        return 0;
+
+    sc.src = src; sc.dst = gpa_scale_buf;
+    sc.srcStride = src_stride; sc.sw = src_w; sc.sh = src_h;
+    sc.dstStride = dst_w * 4; sc.dw = dst_w; sc.dh = dst_h; sc.filter = 1;
+    if (GfxFx_Scale(&sc) != 0)
+        return 0;
+
+    WritePixelArray(gpa_scale_buf, 0, 0, dst_w * 4, w->win->RPort,
+                    w->win->BorderLeft, w->win->BorderTop, dst_w, dst_h,
+                    RECTFMT_RGBA);
+    return 1;
 }
 
 /* Nonblocking: translate at most one queued IntuiMessage. Returns 1 when an

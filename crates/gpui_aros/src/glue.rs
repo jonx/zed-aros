@@ -96,6 +96,22 @@ unsafe extern "C" {
     /// Free a buffer handed out by the glue (AllocVec-backed).
     pub(crate) fn gpa_free(p: *mut c_void);
 
+    /// 1 if gpufx.library opened (dynamic-resolution present is possible).
+    pub(crate) fn gpa_gpufx_available() -> c_int;
+
+    /// GPU bilinear-upscale a src_w x src_h RGBA buffer to the window's inner
+    /// dst_w x dst_h and blit it (via gpufx.library). Returns 1 on success, 0
+    /// if unavailable (caller falls back to a direct blit).
+    pub(crate) fn gpa_blit_scaled(
+        handle: *mut c_void,
+        src: *const c_void,
+        src_stride: c_int,
+        src_w: c_int,
+        src_h: c_int,
+        dst_w: c_int,
+        dst_h: c_int,
+    ) -> c_int;
+
     /// Programmatic inner-size change (ChangeWindowBox); Intuition answers
     /// asynchronously with a NEWSIZE event.
     pub(crate) fn gpa_set_size(handle: *mut c_void, inner_w: c_int, inner_h: c_int);

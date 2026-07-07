@@ -51,6 +51,14 @@ echo "[link] compile rust-aros std glues"
 "$CC" "${CFLAGS[@]}" -c "$RS/aros_thread_glue.c" -o "$OUT/aros_thread_glue.o"
 "$CC" "${CFLAGS[@]}" -I"$GEN/include/aros/posixc" -c "$RS/aros_sync_glue.c" -o "$OUT/aros_sync_glue.o"
 
+# cc-rs build-script native objects (e.g. psm's aarch64 asm defining
+# rust_psm_*). Their generated `.a` archives are often empty (Apple `ar`
+# writes empty archives from ELF objects), so link the loose `.o` directly.
+NATIVE_O=()
+while IFS= read -r o; do NATIVE_O+=("$o"); done < <(
+    find "$REPO/target/aarch64-unknown-aros/$PROFILE/build" -path "*/out/*.o" 2>/dev/null | sort)
+echo "[link] native build-script objects: ${#NATIVE_O[@]}"
+
 echo "[link] collect-aros -> ET_REL AROS program ($PROFILE)"
 COMPILER_PATH="$XTBIN" "$COLLECT" \
     --eh-frame-hdr --allow-multiple-definition \
@@ -58,6 +66,7 @@ COMPILER_PATH="$XTBIN" "$COLLECT" \
     "$LIBDIR/startup.o" "$OUT/smoke_main.o" \
     "$OUT/aros_net_glue.o" "$OUT/aros_fs_glue.o" "$OUT/aros_process_glue.o" \
     "$OUT/aros_thread_glue.o" "$OUT/aros_sync_glue.o" "$RSLIB" \
+    "${NATIVE_O[@]}" \
     -\( "${AUTOLIB[@]}" "${STDLIBS[@]}" -\)
 echo "[link] built: $OUT/GpuiSmoke ($(stat -f%z "$OUT/GpuiSmoke") bytes)"
 
