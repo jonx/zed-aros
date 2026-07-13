@@ -50,6 +50,7 @@ echo "[link] compile rust-aros std glues"
 "$CC" "${CFLAGS[@]}" -c "$RS/aros_process_glue.c" -o "$OUT/aros_process_glue.o"
 "$CC" "${CFLAGS[@]}" -c "$RS/aros_thread_glue.c" -o "$OUT/aros_thread_glue.o"
 "$CC" "${CFLAGS[@]}" -I"$GEN/include/aros/posixc" -c "$RS/aros_sync_glue.c" -o "$OUT/aros_sync_glue.o"
+"$CC" "${CFLAGS[@]}" -c "$RS/aros_env_glue.c" -o "$OUT/aros_env_glue.o"
 
 # cc-rs build-script native objects (e.g. psm's aarch64 asm defining
 # rust_psm_*). Their generated `.a` archives are often empty (Apple `ar`
@@ -65,7 +66,7 @@ COMPILER_PATH="$XTBIN" "$COLLECT" \
     -L"$LIBDIR" -o "$OUT/GpuiSmoke" \
     "$LIBDIR/startup.o" "$OUT/smoke_main.o" \
     "$OUT/aros_net_glue.o" "$OUT/aros_fs_glue.o" "$OUT/aros_process_glue.o" \
-    "$OUT/aros_thread_glue.o" "$OUT/aros_sync_glue.o" "$RSLIB" \
+    "$OUT/aros_thread_glue.o" "$OUT/aros_sync_glue.o" "$OUT/aros_env_glue.o" "$RSLIB" \
     "${NATIVE_O[@]}" \
     -\( "${AUTOLIB[@]}" "${STDLIBS[@]}" -\)
 echo "[link] built: $OUT/GpuiSmoke ($(stat -f%z "$OUT/GpuiSmoke") bytes)"
