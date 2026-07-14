@@ -97,6 +97,10 @@ pub fn key_name(down_code: c_int, base_chars: &[u8]) -> Option<String> {
         0x59 => Some("f10"),
         0x5F => Some("help"),
         0x6F => Some("f12"),
+        // RAWKEY_HOME / RAWKEY_END (rawkeycodes.h) — MorphOS-compatible
+        // extended nav keys; Zed binds line/document navigation to them.
+        0x70 => Some("home"),
+        0x71 => Some("end"),
         _ => None,
     };
     if let Some(name) = named {

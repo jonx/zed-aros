@@ -242,6 +242,33 @@ fn atlas_roundtrips_bytes_and_reuses_keys() {
     assert_eq!(t1.texture_id, t2.texture_id);
 }
 
+#[test]
+fn read_tile_out_of_range_yields_none_not_panic() {
+    // A stale AtlasTile (e.g. one whose slot was freed and re-pushed smaller)
+    // can point past the current buffer. `read_tile` must treat that as a gone
+    // texture, not index out of bounds — an OOB panic is fatal under the AROS
+    // panic=abort build.
+    let atlas = Arc::new(CpuAtlas::new());
+    let good = insert_mono_tile(&atlas, "icons/oob-probe.svg", 3, 2, 9);
+    assert!(atlas.read_tile(&good).is_some());
+
+    let mut stale = good;
+    stale.bounds = Bounds {
+        origin: Point {
+            x: DevicePixels(4000),
+            y: DevicePixels(4000),
+        },
+        size: Size {
+            width: DevicePixels(64),
+            height: DevicePixels(64),
+        },
+    };
+    assert!(
+        atlas.read_tile(&stale).is_none(),
+        "an out-of-range tile must be dropped, not panic"
+    );
+}
+
 // ---- input translation (rawkey → GPUI) ---------------------------------------
 //
 // Field bugs (AROS, 2026-07-04): dead-key IAddress deref crashed on
@@ -261,6 +288,8 @@ fn rawkey_named_keys_match_backend_vocabulary() {
         (0x46, "delete"),
         (0x48, "pageup"),
         (0x49, "pagedown"),
+        (0x70, "home"), // RAWKEY_HOME (rawkeycodes.h)
+        (0x71, "end"),  // RAWKEY_END
         (0x4C, "up"),
         (0x4D, "down"),
         (0x4E, "right"),

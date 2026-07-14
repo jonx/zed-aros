@@ -86,6 +86,19 @@ impl CpuAtlas {
         let w = tile.bounds.size.width.0 as usize;
         let h = tile.bounds.size.height.0 as usize;
 
+        // Bounds-guard the read the same way `upload` guards its write: a stale
+        // `AtlasTile` (e.g. one whose slot was freed and re-pushed at a smaller
+        // size) can carry bounds that exceed the current buffer. Copying that
+        // unchecked would panic in the render loop — fatal under panic=abort on
+        // AROS. Treat an out-of-range tile as gone (`None`), like a missing slot.
+        if x + w > texture.width
+            || (y + h)
+                .checked_mul(stride)
+                .is_none_or(|end| end > texture.bytes.len())
+        {
+            return None;
+        }
+
         let mut data = vec![0u8; w * h * bpp];
         for row in 0..h {
             let src = (y + row) * stride + x * bpp;
@@ -181,10 +194,24 @@ impl CpuAtlasState {
         {
             return Some(tile);
         }
+        // A tile larger than the biggest atlas we can build can never be packed;
+        // pushing a texture for it would leak a fresh 1-64 MB buffer that never
+        // holds a key (only `remove` recycles slots, and this one gets no key).
+        if size.width.0 > MAX_ATLAS_SIZE || size.height.0 > MAX_ATLAS_SIZE {
+            return None;
+        }
         let index = self.push_texture(size, kind);
-        self.list_mut(kind).textures[index]
+        let tile = self.list_mut(kind).textures[index]
             .as_mut()
-            .and_then(|texture| texture.allocate(size))
+            .and_then(|texture| texture.allocate(size));
+        if tile.is_none() {
+            // The freshly-pushed texture couldn't satisfy the request after all;
+            // reclaim its slot instead of leaking the buffer.
+            let list = self.list_mut(kind);
+            list.textures[index] = None;
+            list.free_list.push(index);
+        }
+        tile
     }
 
     fn push_texture(&mut self, min_size: Size<DevicePixels>, kind: AtlasTextureKind) -> usize {
