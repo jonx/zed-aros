@@ -395,6 +395,10 @@ unsafe fn build_window_class(name: &'static str, superclass: &Class) -> *const C
             window_will_exit_fullscreen as extern "C" fn(&Object, Sel, id),
         );
         decl.add_method(
+            sel!(windowDidEnterFullScreen:),
+            window_did_enter_fullscreen as extern "C" fn(&Object, Sel, id),
+        );
+        decl.add_method(
             sel!(windowDidExitFullScreen:),
             window_did_exit_fullscreen as extern "C" fn(&Object, Sel, id),
         );
@@ -522,6 +526,12 @@ struct MacWindowState {
     // Whether the next left-mouse click is also the focusing click.
     first_mouse: bool,
     fullscreen_restore_bounds: Bounds<Pixels>,
+    // True while an enter/exit fullscreen animation is in flight. AppKit
+    // silently ignores a `-toggleFullScreen:` sent during the transition, so
+    // `toggle_fullscreen` drops requests while this is set instead of firing a
+    // message that would be lost — otherwise a click/keystroke that lands mid
+    // animation looks like "fullscreen didn't respond".
+    fullscreen_transition: bool,
     move_tab_to_new_window_callback: Option<Box<dyn FnMut()>>,
     merge_all_windows_callback: Option<Box<dyn FnMut()>>,
     select_next_tab_callback: Option<Box<dyn FnMut()>>,
@@ -912,6 +922,7 @@ impl MacWindow {
                 external_files_dragged: false,
                 first_mouse: false,
                 fullscreen_restore_bounds: Bounds::default(),
+                fullscreen_transition: false,
                 move_tab_to_new_window_callback: None,
                 merge_all_windows_callback: None,
                 select_next_tab_callback: None,
@@ -1614,6 +1625,13 @@ impl PlatformWindow for MacWindow {
 
     fn toggle_fullscreen(&self) {
         let this = self.0.lock();
+        // AppKit ignores `-toggleFullScreen:` while an enter/exit animation is
+        // still running, so a click/keystroke that lands mid-transition would
+        // be silently lost. Drop it here instead — the user can toggle again
+        // once the animation settles.
+        if this.fullscreen_transition {
+            return;
+        }
         let window = this.native_window;
         let closed = this.closed.clone();
         this.foreground_executor
@@ -2398,6 +2416,7 @@ extern "C" fn window_did_resize(this: &Object, _: Sel, _: id) {
 extern "C" fn window_will_enter_fullscreen(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
     let mut lock = window_state.as_ref().lock();
+    lock.fullscreen_transition = true;
     lock.fullscreen_restore_bounds = lock.bounds();
     lock.restore_traffic_light();
 
@@ -2412,7 +2431,8 @@ extern "C" fn window_will_enter_fullscreen(this: &Object, _: Sel, _: id) {
 
 extern "C" fn window_will_exit_fullscreen(this: &Object, _: Sel, _: id) {
     let window_state = unsafe { get_window_state(this) };
-    let lock = window_state.as_ref().lock();
+    let mut lock = window_state.as_ref().lock();
+    lock.fullscreen_transition = true;
 
     let min_version = NSOperatingSystemVersion::new(15, 3, 0);
 
@@ -2423,11 +2443,20 @@ extern "C" fn window_will_exit_fullscreen(this: &Object, _: Sel, _: id) {
     }
 }
 
+extern "C" fn window_did_enter_fullscreen(this: &Object, _: Sel, _: id) {
+    // SAFETY: This method is registered only on GPUI window classes, which initialize
+    // WINDOW_STATE_IVAR with an Arc<Mutex<MacWindowState>> during window creation.
+    let window_state = unsafe { get_window_state(this) };
+    window_state.as_ref().lock().fullscreen_transition = false;
+}
+
 extern "C" fn window_did_exit_fullscreen(this: &Object, _: Sel, _: id) {
     // SAFETY: This method is registered only on GPUI window classes, which initialize
     // WINDOW_STATE_IVAR with an Arc<Mutex<MacWindowState>> during window creation.
     let window_state = unsafe { get_window_state(this) };
-    window_state.as_ref().lock().move_traffic_light();
+    let mut lock = window_state.as_ref().lock();
+    lock.fullscreen_transition = false;
+    lock.move_traffic_light();
 }
 
 pub(crate) fn is_macos_version_at_least(version: NSOperatingSystemVersion) -> bool {
