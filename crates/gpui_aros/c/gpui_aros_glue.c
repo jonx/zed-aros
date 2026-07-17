@@ -213,6 +213,14 @@ void gpa_lower_task_pri(int pri)
         SetTaskPri(me, pri);
 }
 
+/* This task's exec Task pointer -- the kernel's task dump prints the same
+ * value, so logging it at thread start maps 'pthread thread #N' back to the
+ * role that spawned it. Diagnostic only. */
+unsigned long gpa_task_ptr(void)
+{
+    return (unsigned long)FindTask(NULL);
+}
+
 /* Callable from any task/thread; no-op before gpa_init_main. */
 void gpa_wake_main(void)
 {

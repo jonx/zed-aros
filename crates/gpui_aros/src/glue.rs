@@ -5,7 +5,7 @@
 //! `cargo check` never links, so these unresolved externs are fine for the
 //! check milestone.
 
-use std::os::raw::{c_char, c_int, c_uint, c_void};
+use std::os::raw::{c_char, c_int, c_uint, c_ulong, c_void};
 
 /// Mirrors `struct GpaEvent` in the C glue. Event kinds below.
 #[repr(C)]
@@ -86,6 +86,9 @@ unsafe extern "C" {
 
     /// Lower the *calling* task's exec priority (see gpa_lower_task_pri).
     pub(crate) fn gpa_lower_task_pri(pri: c_int);
+
+    /// This task's exec Task pointer (matches the kernel task dump).
+    pub(crate) fn gpa_task_ptr() -> c_ulong;
 
     /// Write `len` bytes to clipboard.device unit 0 as FORM FTXT / CHRS
     /// (system charset). Main thread. Returns 0 on success.
