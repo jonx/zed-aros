@@ -23,6 +23,7 @@
 #include <cybergraphx/cybergraphics.h>
 #include <devices/clipboard.h>
 #include <devices/inputevent.h>
+#include <devices/timer.h>
 #include <exec/io.h>
 #include <exec/libraries.h>
 #include <graphics/gfx.h>
@@ -157,12 +158,39 @@ static void gpa_map_rawkey(struct IntuiMessage *im, int code, int qualifier,
 static struct Task *gpa_main_task;
 static LONG gpa_wake_sigbit = -1;
 
+/* One long-lived timer for the run loop's timeout (see gpa_wait_timeout_ms).
+ * Owned by the main task: CreateMsgPort() allocates a signal bit for the
+ * calling task, and only the main task ever waits on it. */
+static struct MsgPort      *gpa_timer_port;
+static struct timerequest  *gpa_timer_req;
+
 /* Called once from the platform's main thread before the run loop starts. */
 void gpa_init_main(void)
 {
     gpa_main_task = FindTask(NULL);
     if (gpa_wake_sigbit < 0)
         gpa_wake_sigbit = AllocSignal(-1);
+
+    /* Open the timer ONCE. posixc's usleep()/nanosleep() does a full
+     * CreateMsgPort + CreateIORequest + OpenDevice + CloseDevice + delete
+     * cycle per call (upstream even FIXMEs it), so the old poll loop's
+     * usleep(2000) burned ~500 device open/close cycles a second and
+     * contended timer.device against every worker task doing the same. */
+    if (!gpa_timer_port && (gpa_timer_port = CreateMsgPort())) {
+        gpa_timer_req = (struct timerequest *)CreateIORequest(
+            gpa_timer_port, sizeof(struct timerequest));
+        if (gpa_timer_req) {
+            if (OpenDevice("timer.device", UNIT_MICROHZ,
+                           (struct IORequest *)gpa_timer_req, 0) != 0) {
+                DeleteIORequest((struct IORequest *)gpa_timer_req);
+                gpa_timer_req = NULL;
+            }
+        }
+        if (!gpa_timer_req) {
+            DeleteMsgPort(gpa_timer_port);
+            gpa_timer_port = NULL;
+        }
+    }
 }
 
 unsigned gpa_wake_sigmask(void)
@@ -475,17 +503,63 @@ unsigned gpa_window_sigmask(void *handle)
  * mask | timer.device. Simpler and safe (no timer.device unit setup); the
  * cost is up to ~2 ms of extra latency per wakeup, fine for a 30 fps loop.
  * SetSignal(0, mask) reads and clears the signals in one call. */
+/* Park the run loop until one of `mask`'s signals arrives or `ms` elapses.
+ *
+ * This is the app's idle path, so it must be a real exec Wait(), not a poll.
+ * The previous implementation looped on `usleep(2000)` + SetSignal(), which
+ * was pathological on this port:
+ *   - posixc usleep() -> nanosleep() does CreateMsgPort + CreateIORequest +
+ *     OpenDevice("timer.device") + DoIO + CloseDevice + Delete* on EVERY
+ *     call, so idling cost ~500 device open/close cycles and ~1000 allocs a
+ *     second (OpenDevice/CloseDevice Forbid() internally -> a scheduler /
+ *     sigprocmask storm, pinning the guest CPU at 100%);
+ *   - that hammering contended timer.device against every worker task whose
+ *     I/O also slept, and a lost timer reply left the UI task blocked in
+ *     DoIO *forever* with IDCMP already signalled -- the "freezes after a
+ *     few clicks" hang (input queued, UI asleep on a reply that never came);
+ *   - and it added up to 2 ms of latency to every input event.
+ * Blocking on Wait() fixes all three: zero timer traffic while idle, instant
+ * wake on IDCMP/dispatcher signals, and one long-lived timer request (opened
+ * in gpa_init_main) for the timeout instead of 500 disposable ones a second.
+ *
+ * Main-task only (the timer port's signal bit belongs to that task). */
 void gpa_wait_timeout_ms(unsigned mask, int ms)
 {
-    int waited_ms = 0;
-    for (;;) {
-        if (mask && (SetSignal(0, mask) & mask))
-            return;
-        if (waited_ms >= ms)
-            return;
-        usleep(2000);
-        waited_ms += 2;
+    ULONG timer_sig;
+
+    /* Already signalled: consume and go (test-and-clear, as before) so a busy
+     * frame never touches the timer at all. */
+    if (mask && (SetSignal(0, mask) & mask))
+        return;
+
+    if (ms <= 0)
+        return;
+
+    if (!gpa_timer_req) {
+        /* No timer (OpenDevice failed): block on the signals alone rather
+         * than spin. mask==0 would hang, so only Wait() when we have one. */
+        if (mask)
+            Wait(mask);
+        return;
     }
+
+    timer_sig = 1u << gpa_timer_port->mp_SigBit;
+    SetSignal(0, timer_sig);            /* drop any stale reply signal */
+
+    gpa_timer_req->tr_node.io_Command = TR_ADDREQUEST;
+    gpa_timer_req->tr_time.tv_secs    = ms / 1000;
+    gpa_timer_req->tr_time.tv_micro   = (ms % 1000) * 1000;
+    SendIO((struct IORequest *)gpa_timer_req);
+
+    Wait(mask | timer_sig);
+
+    /* Cancel if it hasn't fired, then always reap so the request is reusable
+     * next frame (AbortIO on a completed request is a no-op, but WaitIO must
+     * still collect the reply either way). */
+    if (!CheckIO((struct IORequest *)gpa_timer_req))
+        AbortIO((struct IORequest *)gpa_timer_req);
+    WaitIO((struct IORequest *)gpa_timer_req);
+    SetSignal(0, timer_sig);
 }
 
 void gpa_inner_size(void *handle, int *out_w, int *out_h)
