@@ -84,6 +84,9 @@ unsafe extern "C" {
     /// Nudge the run loop out of its park. Any thread; no-op before init.
     pub(crate) fn gpa_wake_main();
 
+    /// Lower the *calling* task's exec priority (see gpa_lower_task_pri).
+    pub(crate) fn gpa_lower_task_pri(pri: c_int);
+
     /// Write `len` bytes to clipboard.device unit 0 as FORM FTXT / CHRS
     /// (system charset). Main thread. Returns 0 on success.
     pub(crate) fn gpa_clipboard_write_text(bytes: *const c_void, len: c_int) -> c_int;

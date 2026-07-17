@@ -198,6 +198,21 @@ unsigned gpa_wake_sigmask(void)
     return gpa_wake_sigbit >= 0 ? (1u << gpa_wake_sigbit) : 0;
 }
 
+/* Drop the calling task's priority. Background workers inherit the parent's
+ * priority via pthread_attr_init() (it copies tc_Node.ln_Pri), so they land at
+ * pri 0 -- the same as the UI task. Every AROS task shares ONE host CPU here,
+ * and exec only round-robins equal priorities, so a busy worker starves the UI
+ * outright: task dumps during a "freeze" show C:Feraille sitting in READY with
+ * its wakeup signal already delivered while a worker holds the CPU. Running
+ * background work below the UI means the UI preempts it the moment it has
+ * something to do, which is the behaviour every other Amiga app expects. */
+void gpa_lower_task_pri(int pri)
+{
+    struct Task *me = FindTask(NULL);
+    if (me)
+        SetTaskPri(me, pri);
+}
+
 /* Callable from any task/thread; no-op before gpa_init_main. */
 void gpa_wake_main(void)
 {

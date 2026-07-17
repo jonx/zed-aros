@@ -6,6 +6,7 @@
 //! servicing all `dispatch_after` deadlines from a min-heap.
 
 use std::cmp::Ordering;
+use std::ffi::c_int;
 use std::collections::{BinaryHeap, VecDeque};
 use std::sync::Arc;
 use std::thread::{self, ThreadId};
@@ -18,6 +19,12 @@ use parking_lot::Mutex;
 use crate::glue;
 
 const MIN_THREADS: usize = 2;
+
+/// Exec priority for background workers and the timer thread: just below the
+/// UI task (which runs at 0), so the UI always preempts background work on the
+/// single guest CPU. Not lower than -1: these still need to outrank idle-ish
+/// system tasks and make timely progress.
+const WORKER_PRI: c_int = -1;
 
 /// One pending `dispatch_after` runnable, ordered by deadline for the timer
 /// thread's min-heap. `seq` breaks ties (and keeps the ordering total without
@@ -88,6 +95,11 @@ impl ArosDispatcher {
                 thread::Builder::new()
                     .name(format!("gpui-aros-worker-{i}"))
                     .spawn(move || {
+                        // Below the UI task (see gpa_lower_task_pri): with one
+                        // guest CPU and exec's strict-priority scheduling, an
+                        // equal-priority worker starves the UI outright.
+                        // SAFETY: FFI; acts on the calling task only.
+                        unsafe { glue::gpa_lower_task_pri(WORKER_PRI) };
                         for runnable in receiver.iter() {
                             runnable.run();
                         }
@@ -109,7 +121,12 @@ impl ArosDispatcher {
             let main_queue = main_queue.clone();
             thread::Builder::new()
                 .name("gpui-aros-timer".to_owned())
-                .spawn(move || timer_loop(timer_receiver, main_queue))
+                .spawn(move || {
+                    // Same rationale as the workers: never outrank the UI.
+                    // SAFETY: FFI; acts on the calling task only.
+                    unsafe { glue::gpa_lower_task_pri(WORKER_PRI) };
+                    timer_loop(timer_receiver, main_queue)
+                })
                 .expect("failed to spawn gpui_aros timer thread")
         };
 
