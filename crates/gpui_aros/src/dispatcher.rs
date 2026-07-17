@@ -12,11 +12,93 @@ use std::sync::Arc;
 use std::thread::{self, ThreadId};
 use std::time::{Duration, Instant};
 
-use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
 use gpui::{PlatformDispatcher, Priority, RunnableVariant};
 use parking_lot::Mutex;
+// std's Mutex/Condvar (NOT parking_lot's) for anything that BLOCKS: on this
+// target parking_lot_core falls back to its generic ThreadParker, which
+// busy-spins instead of parking -- fatal on a single-CPU cooperative guest
+// (measured: 99% CPU at idle). std's condvar routes through aros_cond_wait ->
+// pthread_cond_wait -> a real exec Wait().
+use std::sync::{Condvar as StdCondvar, Mutex as StdMutex};
 
 use crate::glue;
+
+/// A blocking MPMC queue.
+///
+/// Deliberately NOT crossbeam_channel: crossbeam is lock-free and spins
+/// (`Backoff::snooze()` -> `yield_now()`) before parking, which is designed for
+/// real multi-core parallelism. Hosted AROS multiplexes EVERY task onto one
+/// host CPU with cooperative, signal-based switching -- so a spinning receiver
+/// cannot make progress, it can only burn the CPU that the task it is waiting
+/// for needs to run. Task dumps during a freeze caught exactly that: a worker
+/// pinned at 100% in `crossbeam_channel::flavors::list::Channel::recv` while
+/// the UI sat in READY. A mutex+condvar blocks immediately and hands the CPU
+/// back.
+struct BlockingQueue<T> {
+    items: StdMutex<Option<VecDeque<T>>>, // None => closed
+    ready: StdCondvar,
+}
+
+impl<T> BlockingQueue<T> {
+    fn new() -> Self {
+        Self {
+            items: StdMutex::new(Some(VecDeque::new())),
+            ready: StdCondvar::new(),
+        }
+    }
+
+    /// Returns false if the queue is closed.
+    fn push(&self, item: T) -> bool {
+        let mut guard = self.items.lock().unwrap_or_else(|e| e.into_inner());
+        match guard.as_mut() {
+            Some(q) => {
+                q.push_back(item);
+                drop(guard);
+                self.ready.notify_one();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Block until an item arrives; None once closed and drained.
+    fn pop(&self) -> Option<T> {
+        let mut guard = self.items.lock().unwrap_or_else(|e| e.into_inner());
+        loop {
+            match guard.as_mut() {
+                Some(q) => match q.pop_front() {
+                    Some(item) => return Some(item),
+                    None => {
+                        guard = self
+                            .ready
+                            .wait(guard)
+                            .unwrap_or_else(|e| e.into_inner());
+                    }
+                },
+                None => return None,
+            }
+        }
+    }
+
+    /// Block until an item arrives or `timeout` elapses.
+    fn pop_timeout(&self, timeout: Duration) -> Option<T> {
+        let mut guard = self.items.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(item) = guard.as_mut()?.pop_front() {
+            return Some(item);
+        }
+        guard = self
+            .ready
+            .wait_timeout(guard, timeout)
+            .unwrap_or_else(|e| e.into_inner())
+            .0;
+        guard.as_mut()?.pop_front()
+    }
+
+    fn close(&self) {
+        *self.items.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        self.ready.notify_all();
+    }
+}
 
 const MIN_THREADS: usize = 2;
 
@@ -59,22 +141,28 @@ impl Ord for TimerEntry {
 pub(crate) struct ArosDispatcher {
     main_thread_id: ThreadId,
     main_queue: Arc<Mutex<VecDeque<RunnableVariant>>>,
-    background_sender: Sender<RunnableVariant>,
-    timer_sender: Sender<(Instant, RunnableVariant)>,
+    background_queue: Arc<BlockingQueue<RunnableVariant>>,
+    timer_queue: Arc<BlockingQueue<(Instant, RunnableVariant)>>,
     _background_threads: Vec<thread::JoinHandle<()>>,
     _timer_thread: thread::JoinHandle<()>,
+}
+
+impl Drop for ArosDispatcher {
+    fn drop(&mut self) {
+        self.background_queue.close();
+        self.timer_queue.close();
+    }
 }
 
 impl ArosDispatcher {
     /// Must be constructed on the main thread (records its `ThreadId`).
     pub(crate) fn new() -> Self {
         // gpui's PriorityQueue re-export is not available for this target, so a
-        // plain MPMC channel backs the worker pool. Priority is not honored; the
-        // run loop's frame cadence keeps latency bounded (correctness first).
-        let (background_sender, background_receiver): (
-            Sender<RunnableVariant>,
-            Receiver<RunnableVariant>,
-        ) = unbounded();
+        // plain blocking MPMC queue backs the worker pool. Priority is not
+        // honored; the run loop's frame cadence keeps latency bounded
+        // (correctness first).
+        let background_queue: Arc<BlockingQueue<RunnableVariant>> =
+            Arc::new(BlockingQueue::new());
         // Every AROS task -- including these workers -- is multiplexed onto a
         // SINGLE host thread by the hosted kernel, so `available_parallelism()`
         // (the host's core count, ~10-14 on an Apple Silicon Mac) buys exactly
@@ -91,7 +179,7 @@ impl ArosDispatcher {
 
         let background_threads = (0..thread_count)
             .map(|i| {
-                let receiver = background_receiver.clone();
+                let queue = background_queue.clone();
                 thread::Builder::new()
                     .name(format!("gpui-aros-worker-{i}"))
                     .spawn(move || {
@@ -100,7 +188,7 @@ impl ArosDispatcher {
                         // equal-priority worker starves the UI outright.
                         // SAFETY: FFI; acts on the calling task only.
                         unsafe { glue::gpa_lower_task_pri(WORKER_PRI) };
-                        for runnable in receiver.iter() {
+                        while let Some(runnable) = queue.pop() {
                             runnable.run();
                         }
                     })
@@ -116,16 +204,18 @@ impl ArosDispatcher {
         // and on hosted AROS each thread is an exec Task from a finite pool, so
         // thread-per-timer churned tasks and risked a spawn abort on the hot
         // path (fatal in AROS's single address space).
-        let (timer_sender, timer_receiver) = unbounded::<(Instant, RunnableVariant)>();
+        let timer_queue: Arc<BlockingQueue<(Instant, RunnableVariant)>> =
+            Arc::new(BlockingQueue::new());
         let timer_thread = {
             let main_queue = main_queue.clone();
+            let timer_queue = timer_queue.clone();
             thread::Builder::new()
                 .name("gpui-aros-timer".to_owned())
                 .spawn(move || {
                     // Same rationale as the workers: never outrank the UI.
                     // SAFETY: FFI; acts on the calling task only.
                     unsafe { glue::gpa_lower_task_pri(WORKER_PRI) };
-                    timer_loop(timer_receiver, main_queue)
+                    timer_loop(timer_queue, main_queue)
                 })
                 .expect("failed to spawn gpui_aros timer thread")
         };
@@ -133,8 +223,8 @@ impl ArosDispatcher {
         Self {
             main_thread_id: thread::current().id(),
             main_queue,
-            background_sender,
-            timer_sender,
+            background_queue,
+            timer_queue,
             _background_threads: background_threads,
             _timer_thread: timer_thread,
         }
@@ -152,7 +242,7 @@ impl PlatformDispatcher for ArosDispatcher {
     }
 
     fn dispatch(&self, runnable: RunnableVariant, _priority: Priority) {
-        if self.background_sender.send(runnable).is_err() {
+        if !self.background_queue.push(runnable) {
             log::error!("gpui_aros: background dispatch failed (workers gone)");
         }
     }
@@ -170,7 +260,7 @@ impl PlatformDispatcher for ArosDispatcher {
         // Hand the deadline to the shared timer thread. Failure only happens if
         // that thread is gone (shutdown) — drop the runnable rather than panic,
         // matching `dispatch`.
-        if self.timer_sender.send((deadline, runnable)).is_err() {
+        if !self.timer_queue.push((deadline, runnable)) {
             log::error!("gpui_aros: timer dispatch failed (timer thread gone)");
         }
     }
@@ -185,7 +275,7 @@ impl PlatformDispatcher for ArosDispatcher {
 /// runnable onto the main queue and wake the run loop. Exits when the sender is
 /// dropped (dispatcher teardown).
 fn timer_loop(
-    receiver: Receiver<(Instant, RunnableVariant)>,
+    queue: Arc<BlockingQueue<(Instant, RunnableVariant)>>,
     main_queue: Arc<Mutex<VecDeque<RunnableVariant>>>,
 ) {
     let mut heap: BinaryHeap<TimerEntry> = BinaryHeap::new();
@@ -205,26 +295,33 @@ fn timer_loop(
         }
 
         // Park until the next deadline, or indefinitely if none pending.
+        // A zero/near-zero timeout would busy-loop, so only wait when the
+        // deadline is still ahead; otherwise loop straight back and fire it.
         let received = match heap.peek() {
             Some(next) => {
                 let timeout = next.deadline.saturating_duration_since(Instant::now());
-                receiver.recv_timeout(timeout)
+                if timeout.is_zero() {
+                    continue;
+                }
+                match queue.pop_timeout(timeout) {
+                    Some(item) => Some(item),
+                    // Timed out (or spurious): loop back and fire matured deadlines.
+                    None => continue,
+                }
             }
-            None => receiver.recv().map_err(|_| RecvTimeoutError::Disconnected),
+            // Nothing pending: block. `None` means the queue closed (shutdown).
+            None => match queue.pop() {
+                Some(item) => Some(item),
+                None => return,
+            },
         };
-        match received {
-            Ok((deadline, runnable)) => {
-                heap.push(TimerEntry {
-                    deadline,
-                    seq,
-                    runnable,
-                });
-                seq = seq.wrapping_add(1);
-            }
-            // Timed out: loop back and fire matured deadlines.
-            Err(RecvTimeoutError::Timeout) => {}
-            // Sender dropped (shutdown): stop; any pending timers are abandoned.
-            Err(RecvTimeoutError::Disconnected) => return,
+        if let Some((deadline, runnable)) = received {
+            heap.push(TimerEntry {
+                deadline,
+                seq,
+                runnable,
+            });
+            seq = seq.wrapping_add(1);
         }
     }
 }
