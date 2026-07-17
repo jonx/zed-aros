@@ -68,8 +68,19 @@ impl ArosDispatcher {
             Sender<RunnableVariant>,
             Receiver<RunnableVariant>,
         ) = unbounded();
-        let thread_count =
-            thread::available_parallelism().map_or(MIN_THREADS, |n| n.get().max(MIN_THREADS));
+        // Every AROS task -- including these workers -- is multiplexed onto a
+        // SINGLE host thread by the hosted kernel, so `available_parallelism()`
+        // (the host's core count, ~10-14 on an Apple Silicon Mac) buys exactly
+        // zero parallelism here. It only multiplies context switches (each one
+        // a raise()/sigsuspend() signal round-trip) and contention on the
+        // shared, not-always-thread-safe C runtime (posixc's fd table, the
+        // timer device). Cap it: two workers keep I/O overlapping with the UI
+        // without spawning a herd that just fights over one CPU.
+        let thread_count = if cfg!(target_os = "aros") {
+            MIN_THREADS
+        } else {
+            thread::available_parallelism().map_or(MIN_THREADS, |n| n.get().max(MIN_THREADS))
+        };
 
         let background_threads = (0..thread_count)
             .map(|i| {
