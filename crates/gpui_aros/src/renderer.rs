@@ -236,30 +236,54 @@ impl CpuRenderer {
             }
         }
 
-        // Border: approximate per-edge widths with a single stroke of the
-        // widest edge (TODO: honor differing edge widths).
-        let border_width = quad
-            .border_widths
-            .top
-            .0
-            .max(quad.border_widths.right.0)
-            .max(quad.border_widths.bottom.0)
-            .max(quad.border_widths.left.0);
-        if border_width > 0.0 && !quad.border_color.is_transparent() {
-            let mask = self.clip_mask.as_ref();
+        // Border. Uniform widths stroke the (possibly rounded) outline in
+        // one pass. UNEQUAL widths must not collapse to a max-width outline
+        // stroke — `border_l_1().border_b_1()` is how gpui chrome draws `└`
+        // tree-connector elbows, and the old max-approximation rendered
+        // those as full boxes (Browse tree, 2026-07-21). Draw each edge as
+        // its own filled strip instead (straight edges; with corner radii
+        // this ignores the rounding, which chrome never combines with
+        // per-side borders).
+        let bw = &quad.border_widths;
+        let (t, r, b, l) = (bw.top.0, bw.right.0, bw.bottom.0, bw.left.0);
+        let max_width = t.max(r).max(b).max(l);
+        if max_width > 0.0 && !quad.border_color.is_transparent() {
             let paint = solid_paint(quad.border_color);
-            let stroke = Stroke {
-                width: border_width,
-                ..Stroke::default()
-            };
-            // Inset the stroke by half its width so it stays inside the bounds.
-            let inset = border_width / 2.0;
-            let inset_bounds = inset_bounds(&bounds, inset);
-            if let Some(path) = rounded_rect_path(&inset_bounds, &quad.corner_radii)
-                .or_else(|| to_rect(&inset_bounds).map(|r| PathBuilder::from_rect(r)))
-            {
-                self.pixmap
-                    .stroke_path(&path, &paint, &stroke, Transform::identity(), mask);
+            let uniform = t == r && r == b && b == l;
+            if uniform {
+                let mask = self.clip_mask.as_ref();
+                let stroke = Stroke {
+                    width: max_width,
+                    ..Stroke::default()
+                };
+                // Inset the stroke by half its width so it stays inside the bounds.
+                let inset = max_width / 2.0;
+                let inset_bounds = inset_bounds(&bounds, inset);
+                if let Some(path) = rounded_rect_path(&inset_bounds, &quad.corner_radii)
+                    .or_else(|| to_rect(&inset_bounds).map(|r| PathBuilder::from_rect(r)))
+                {
+                    self.pixmap
+                        .stroke_path(&path, &paint, &stroke, Transform::identity(), mask);
+                }
+            } else {
+                let x0 = bounds.origin.x.0;
+                let y0 = bounds.origin.y.0;
+                let x1 = x0 + bounds.size.width.0;
+                let y1 = y0 + bounds.size.height.0;
+                let sides = [
+                    (t > 0.0).then(|| Rect::from_ltrb(x0, y0, x1, y0 + t)),
+                    (b > 0.0).then(|| Rect::from_ltrb(x0, y1 - b, x1, y1)),
+                    (l > 0.0).then(|| Rect::from_ltrb(x0, y0, x0 + l, y1)),
+                    (r > 0.0).then(|| Rect::from_ltrb(x1 - r, y0, x1, y1)),
+                ];
+                for rect in sides.into_iter().flatten().flatten() {
+                    self.pixmap.fill_rect(
+                        rect,
+                        &paint,
+                        Transform::identity(),
+                        self.clip_mask.as_ref(),
+                    );
+                }
             }
         }
     }

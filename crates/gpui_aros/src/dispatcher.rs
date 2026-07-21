@@ -102,11 +102,22 @@ impl<T> BlockingQueue<T> {
 
 const MIN_THREADS: usize = 2;
 
-/// Exec priority for background workers and the timer thread: just below the
-/// UI task (which runs at 0), so the UI always preempts background work on the
-/// single guest CPU. Not lower than -1: these still need to outrank idle-ish
-/// system tasks and make timely progress.
-const WORKER_PRI: c_int = -1;
+/// Exec priority for background workers and the timer thread: SAME as the UI
+/// task (0), relying on exec's round-robin time-slicing between equal-priority
+/// READY tasks for fairness.
+///
+/// History: this was -1 ("UI always preempts background work") while hosted
+/// darwin's preemption was broken — back then a CPU-bound equal-pri worker
+/// starved the UI outright because nothing ever forced a task switch. With
+/// tick forwarding fixed (aros-upstream 8f1acacc) the demotion inverted the
+/// bug: exec's strict-priority scheduler gives pri -1 ZERO cpu while a pri-0
+/// task stays busy, and a continuously-animating UI (any indeterminate
+/// progress spinner repaints every frame) is exactly that — workers starved
+/// forever, folder-size results never applied, navigation enumeration never
+/// ran, tasks never finished, so the spinner never stopped: a livelock
+/// (observed on-device 2026-07-21: UI RUN at pri 0 in render, all workers
+/// READY at -1, one mid-send on the folder-sizes channel).
+const WORKER_PRI: c_int = 0;
 
 /// One pending `dispatch_after` runnable, ordered by deadline for the timer
 /// thread's min-heap. `seq` breaks ties (and keeps the ordering total without
@@ -183,9 +194,9 @@ impl ArosDispatcher {
                 thread::Builder::new()
                     .name(format!("gpui-aros-worker-{i}"))
                     .spawn(move || {
-                        // Below the UI task (see gpa_lower_task_pri): with one
-                        // guest CPU and exec's strict-priority scheduling, an
-                        // equal-priority worker starves the UI outright.
+                        // Same priority as the UI task (see WORKER_PRI doc):
+                        // exec round-robins equal-pri tasks per quantum now
+                        // that preemption ticks actually arrive.
                         // SAFETY: FFI; acts on the calling task only.
                         unsafe { glue::gpa_lower_task_pri(WORKER_PRI) };
                         while let Some(runnable) = queue.pop() {
@@ -212,7 +223,7 @@ impl ArosDispatcher {
             thread::Builder::new()
                 .name("gpui-aros-timer".to_owned())
                 .spawn(move || {
-                    // Same rationale as the workers: never outrank the UI.
+                    // Same rationale as the workers (see WORKER_PRI doc).
                     // SAFETY: FFI; acts on the calling task only.
                     unsafe { glue::gpa_lower_task_pri(WORKER_PRI) };
                     timer_loop(timer_queue, main_queue)
