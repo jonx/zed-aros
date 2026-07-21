@@ -5,6 +5,7 @@ use std::ffi::CString;
 use std::os::raw::{c_int, c_void};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use gpui::{
     AnyWindowHandle, Bounds, Capslock, DevicePixels, DispatchEventResult, GpuSpecs, KeyDownEvent,
@@ -54,8 +55,19 @@ struct ArosWindowState {
     modifiers: Modifiers,
     capslock: Capslock,
     pressed_button: Option<MouseButton>,
+    /// Multi-click synthesis (double-click open, triple-click select):
+    /// Intuition reports raw button events with no click chaining, so we
+    /// track (button, when, where, count) ourselves — same button within
+    /// [`MULTI_CLICK_INTERVAL`] and [`MULTI_CLICK_SLOP`] continues the
+    /// chain, anything else resets to 1.
+    last_click: Option<(MouseButton, Instant, Point<Pixels>, usize)>,
     closed: bool,
 }
+
+/// Max gap between presses that still chains a multi-click (macOS default).
+const MULTI_CLICK_INTERVAL: Duration = Duration::from_millis(500);
+/// Max pointer travel (either axis, px) that still chains a multi-click.
+const MULTI_CLICK_SLOP: f32 = 4.0;
 
 pub(crate) struct ArosWindowInner {
     state: RefCell<ArosWindowState>,
@@ -132,6 +144,7 @@ impl ArosWindow {
             modifiers: Modifiers::default(),
             capslock: Capslock::default(),
             pressed_button: None,
+            last_click: None,
             closed: false,
         };
 
@@ -218,12 +231,31 @@ impl ArosWindowInner {
                 let position = self.set_mouse_position(event.x, event.y);
                 let button = map_button(event.code);
                 let modifiers = self.state.borrow().modifiers;
-                self.state.borrow_mut().pressed_button = Some(button);
+                let now = Instant::now();
+                let click_count = {
+                    let mut st = self.state.borrow_mut();
+                    let count = match st.last_click {
+                        Some((b, t, p, c))
+                            if b == button
+                                && now.duration_since(t) <= MULTI_CLICK_INTERVAL
+                                && (f32::from(position.x) - f32::from(p.x)).abs()
+                                    <= MULTI_CLICK_SLOP
+                                && (f32::from(position.y) - f32::from(p.y)).abs()
+                                    <= MULTI_CLICK_SLOP =>
+                        {
+                            c + 1
+                        }
+                        _ => 1,
+                    };
+                    st.last_click = Some((button, now, position, count));
+                    st.pressed_button = Some(button);
+                    count
+                };
                 self.fire_input(PlatformInput::MouseDown(MouseDownEvent {
                     button,
                     position,
                     modifiers,
-                    click_count: 1,
+                    click_count,
                     first_mouse: false,
                 }));
             }
@@ -231,12 +263,21 @@ impl ArosWindowInner {
                 let position = self.set_mouse_position(event.x, event.y);
                 let button = map_button(event.code);
                 let modifiers = self.state.borrow().modifiers;
-                self.state.borrow_mut().pressed_button = None;
+                let click_count = {
+                    let mut st = self.state.borrow_mut();
+                    st.pressed_button = None;
+                    // The up mirrors its down's count so gpui's click
+                    // handler sees a consistent pair.
+                    match st.last_click {
+                        Some((b, _, _, c)) if b == button => c,
+                        _ => 1,
+                    }
+                };
                 self.fire_input(PlatformInput::MouseUp(MouseUpEvent {
                     button,
                     position,
                     modifiers,
-                    click_count: 1,
+                    click_count,
                 }));
             }
             glue::GPA_EVENT_RAWKEY => self.handle_rawkey(event),
