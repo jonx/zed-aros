@@ -219,7 +219,7 @@ impl ArosWindowInner {
             }
             glue::GPA_EVENT_MOUSEMOVE => {
                 let position = self.set_mouse_position(event.x, event.y);
-                let modifiers = self.state.borrow().modifiers;
+                let modifiers = self.sync_modifiers(event.qualifier);
                 let pressed_button = self.state.borrow().pressed_button;
                 self.fire_input(PlatformInput::MouseMove(MouseMoveEvent {
                     position,
@@ -230,7 +230,7 @@ impl ArosWindowInner {
             glue::GPA_EVENT_MOUSEDOWN => {
                 let position = self.set_mouse_position(event.x, event.y);
                 let button = map_button(event.code);
-                let modifiers = self.state.borrow().modifiers;
+                let modifiers = self.sync_modifiers(event.qualifier);
                 let now = Instant::now();
                 let click_count = {
                     let mut st = self.state.borrow_mut();
@@ -262,7 +262,7 @@ impl ArosWindowInner {
             glue::GPA_EVENT_MOUSEUP => {
                 let position = self.set_mouse_position(event.x, event.y);
                 let button = map_button(event.code);
-                let modifiers = self.state.borrow().modifiers;
+                let modifiers = self.sync_modifiers(event.qualifier);
                 let click_count = {
                     let mut st = self.state.borrow_mut();
                     st.pressed_button = None;
@@ -351,23 +351,24 @@ impl ArosWindowInner {
     /// the keymap.library translation the C glue already performed
     /// (`base_chars` = unmodified key for the binding name, `chars` = the
     /// typed characters).
-    fn handle_rawkey(&self, event: &GpaEvent) {
-        let is_up = event.code & input::IECODE_UP_PREFIX != 0;
-        let down_code = event.code & !input::IECODE_UP_PREFIX;
-        let qualifier = event.qualifier;
-
-        // Qualifiers are authoritative per message — derive the full
-        // modifier state from them and report transitions, exactly once.
+    /// Adopt the modifier state carried by an IntuiMessage qualifier —
+    /// authoritative per message, for MOUSE events as much as keys. Mouse
+    /// handlers used to reuse a cache updated only by rawkey traffic, so
+    /// one lost modifier-up (e.g. released while the host window wasn't
+    /// key) latched ctrl/shift onto every later click: single clicks
+    /// multi-selected, Esc arrived as ctrl-Esc, typed chars were
+    /// suppressed. Fires ModifiersChanged exactly once per transition.
+    fn sync_modifiers(&self, qualifier: c_int) -> Modifiers {
         let modifiers = modifiers_from_qualifier(qualifier);
         let capslock = Capslock {
             on: qualifier & input::IEQUALIFIER_CAPSLOCK != 0,
         };
-        let (changed, position) = {
+        let changed = {
             let mut state = self.state.borrow_mut();
             let changed = state.modifiers != modifiers || state.capslock != capslock;
             state.modifiers = modifiers;
             state.capslock = capslock;
-            (changed, state.mouse_position)
+            changed
         };
         if changed {
             self.fire_input(PlatformInput::ModifiersChanged(ModifiersChangedEvent {
@@ -375,6 +376,16 @@ impl ArosWindowInner {
                 capslock,
             }));
         }
+        modifiers
+    }
+
+    fn handle_rawkey(&self, event: &GpaEvent) {
+        let is_up = event.code & input::IECODE_UP_PREFIX != 0;
+        let down_code = event.code & !input::IECODE_UP_PREFIX;
+        let qualifier = event.qualifier;
+
+        let modifiers = self.sync_modifiers(qualifier);
+        let position = self.state.borrow().mouse_position;
 
         // NewMouse standard: the scroll wheel rides the rawkey stream.
         // Wheel-away-from-user scrolls up = positive y lines (the gpui
