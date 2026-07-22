@@ -433,7 +433,7 @@ impl ArosWindowInner {
         let keystroke = Keystroke {
             modifiers,
             key,
-            key_char,
+            key_char: key_char.clone(),
         };
         if is_up {
             self.fire_input(PlatformInput::KeyUp(KeyUpEvent { keystroke }));
@@ -443,6 +443,18 @@ impl ArosWindowInner {
                 is_held: qualifier & input::IEQUALIFIER_REPEAT != 0,
                 prefer_character_input: false,
             }));
+            // A printable character is text for whatever input is focused.
+            // This runs REGARDLESS of whether the KeyDown propagated: a
+            // focused text input consumes the KeyDown for its own bindings
+            // (so propagate is false), while text insertion is a separate
+            // IME-path concern — exactly the macOS split where insertText
+            // fires independently of the key event. `dispatch_text_input`
+            // no-ops when nothing is focused, so a stray character with no
+            // input handler is harmless. key_char is already None for
+            // control/platform chords, so commands are never mis-inserted.
+            if let Some(text) = key_char {
+                self.dispatch_text_input(&text);
+            }
         }
     }
 
@@ -465,11 +477,33 @@ impl ArosWindowInner {
         position
     }
 
-    fn fire_input(&self, input: PlatformInput) {
+    /// Fire a platform input event into gpui; returns whether the event
+    /// propagated (true = no handler/keybinding consumed it).
+    fn fire_input(&self, input: PlatformInput) -> bool {
         let taken = self.callbacks.borrow_mut().input.take();
         if let Some(mut f) = taken {
-            let _ = f(input);
+            let result = f(input);
             self.callbacks.borrow_mut().input = Some(f);
+            result.propagate
+        } else {
+            true
+        }
+    }
+
+    /// Route a printable character into the focused text input. gpui's
+    /// normal KeyDown path runs keybindings but never inserts key_char text
+    /// — on macOS that comes from a SEPARATE NSTextInputClient callback, so
+    /// a backend without native IME must drive it itself (the mac backend's
+    /// insertText does the same `replace_text_in_range`). Without this,
+    /// gpui-component inputs (rename field, filter box, New Folder dialog)
+    /// silently swallowed every keystroke on AROS. The handler carries its
+    /// own async window context, so no Window/App reference is needed here.
+    /// No-ops when nothing is focused (handler absent).
+    fn dispatch_text_input(&self, text: &str) {
+        let handler = self.state.borrow_mut().input_handler.take();
+        if let Some(mut h) = handler {
+            h.replace_text_in_range(None, text);
+            self.state.borrow_mut().input_handler = Some(h);
         }
     }
 
