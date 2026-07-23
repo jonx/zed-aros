@@ -179,7 +179,7 @@ pub(crate) unsafe fn with_msghdr<R>(
 }
 
 /// Create a zero-initialized message header struct value.
-#[cfg(all(unix, not(target_os = "redox")))]
+#[cfg(all(any(unix, target_os = "aros"), not(target_os = "redox")))]
 pub(crate) fn zero_msghdr() -> c::msghdr {
     // SAFETY: We can't initialize all the fields by value because on some
     // platforms the `msghdr` struct in the libc crate contains private padding

@@ -316,6 +316,7 @@ type _Opcode = c::c_int;
 // BSD, Haiku, Hurd, Redox, and Vita use `unsigned long`.
 #[cfg(any(
     bsd,
+    target_os = "aros",
     target_os = "redox",
     target_os = "haiku",
     target_os = "horizon",

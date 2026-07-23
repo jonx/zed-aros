@@ -80,6 +80,7 @@ pub(crate) const fn sockaddr_in6_sin6_scope_id(addr: &c::sockaddr_in6) -> u32 {
 pub(crate) const fn sockaddr_in6_new(
     #[cfg(any(
         bsd,
+        target_os = "aros",
         target_os = "aix",
         target_os = "espidf",
         target_os = "haiku",
@@ -97,6 +98,7 @@ pub(crate) const fn sockaddr_in6_new(
     c::sockaddr_in6 {
         #[cfg(any(
             bsd,
+            target_os = "aros",
             target_os = "aix",
             target_os = "espidf",
             target_os = "haiku",

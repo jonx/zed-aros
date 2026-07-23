@@ -105,6 +105,7 @@ impl SocketAddrUnix {
         c::sockaddr_un {
             #[cfg(any(
                 bsd,
+                target_os = "aros",
                 target_os = "aix",
                 target_os = "haiku",
                 target_os = "horizon",
@@ -119,6 +120,7 @@ impl SocketAddrUnix {
             sun_path: [0; 104],
             #[cfg(not(any(
                 bsd,
+                target_os = "aros",
                 target_os = "aix",
                 target_os = "haiku",
                 target_os = "horizon",
@@ -342,6 +344,7 @@ pub(crate) fn offsetof_sun_path() -> usize {
     let z = c::sockaddr_un {
         #[cfg(any(
             bsd,
+            target_os = "aros",
             target_os = "aix",
             target_os = "haiku",
             target_os = "horizon",
@@ -353,6 +356,7 @@ pub(crate) fn offsetof_sun_path() -> usize {
         ss_len: 0,
         #[cfg(any(
             bsd,
+            target_os = "aros",
             target_os = "aix",
             target_os = "espidf",
             target_os = "haiku",
@@ -363,6 +367,7 @@ pub(crate) fn offsetof_sun_path() -> usize {
         sun_family: 0_u8,
         #[cfg(not(any(
             bsd,
+            target_os = "aros",
             target_os = "aix",
             target_os = "espidf",
             target_os = "haiku",
@@ -375,6 +380,7 @@ pub(crate) fn offsetof_sun_path() -> usize {
         sun_path: [0; 104],
         #[cfg(not(any(
             bsd,
+            target_os = "aros",
             target_os = "aix",
             target_os = "haiku",
             target_os = "horizon",

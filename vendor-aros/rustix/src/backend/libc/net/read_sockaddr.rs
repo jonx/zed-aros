@@ -21,6 +21,7 @@ use core::mem::size_of;
 pub(crate) struct sockaddr_header {
     #[cfg(any(
         bsd,
+        target_os = "aros",
         target_os = "aix",
         target_os = "espidf",
         target_os = "haiku",
@@ -30,6 +31,7 @@ pub(crate) struct sockaddr_header {
     sa_len: u8,
     #[cfg(any(
         bsd,
+        target_os = "aros",
         target_os = "aix",
         target_os = "espidf",
         target_os = "haiku",
@@ -39,6 +41,7 @@ pub(crate) struct sockaddr_header {
     sa_family: u8,
     #[cfg(not(any(
         bsd,
+        target_os = "aros",
         target_os = "aix",
         target_os = "espidf",
         target_os = "haiku",
@@ -59,6 +62,7 @@ pub(crate) unsafe fn read_sa_family(storage: *const c::sockaddr) -> u16 {
     let _ = c::sockaddr {
         #[cfg(any(
             bsd,
+            target_os = "aros",
             target_os = "aix",
             target_os = "espidf",
             target_os = "haiku",
@@ -69,6 +73,7 @@ pub(crate) unsafe fn read_sa_family(storage: *const c::sockaddr) -> u16 {
         sa_len: 0_u8,
         #[cfg(any(
             bsd,
+            target_os = "aros",
             target_os = "aix",
             target_os = "espidf",
             target_os = "haiku",
@@ -79,6 +84,7 @@ pub(crate) unsafe fn read_sa_family(storage: *const c::sockaddr) -> u16 {
         sa_family: 0_u8,
         #[cfg(not(any(
             bsd,
+            target_os = "aros",
             target_os = "aix",
             target_os = "espidf",
             target_os = "haiku",
