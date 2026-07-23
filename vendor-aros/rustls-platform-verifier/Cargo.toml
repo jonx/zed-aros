@@ -88,10 +88,10 @@ version = "0.23"
 features = ["ring"]
 default-features = false
 
-[target.'cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple"), not(target_arch = "wasm32")))'.dependencies.rustls-native-certs]
+[target.'cfg(any(all(unix, not(target_os = "android"), not(target_vendor = "apple"), not(target_arch = "wasm32")), target_os = "aros"))'.dependencies.rustls-native-certs]
 version = "0.8"
 
-[target.'cfg(all(unix, not(target_os = "android"), not(target_vendor = "apple"), not(target_arch = "wasm32")))'.dependencies.webpki]
+[target.'cfg(any(all(unix, not(target_os = "android"), not(target_vendor = "apple"), not(target_arch = "wasm32")), target_os = "aros"))'.dependencies.webpki]
 version = "0.103"
 default-features = false
 package = "rustls-webpki"
