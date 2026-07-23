@@ -21,7 +21,7 @@ pub(crate) fn listen(_: &net::TcpListener, _: i32) -> io::Result<()> {
     os_required!();
 }
 
-#[cfg(any(unix, target_os = "hermit"))]
+#[cfg(any(unix, target_os = "hermit", target_os = "aros"))]
 pub(crate) fn set_reuseaddr(_: &net::TcpListener, _: bool) -> io::Result<()> {
     os_required!();
 }

@@ -1,5 +1,5 @@
 use std::ops::{Deref, DerefMut};
-#[cfg(any(unix, target_os = "wasi"))]
+#[cfg(any(unix, target_os = "wasi", target_os = "aros"))]
 use std::os::fd::AsRawFd;
 // TODO: once <https://github.com/rust-lang/rust/issues/126198> is fixed this
 // can use `std::os::fd` and be merged with the above.
