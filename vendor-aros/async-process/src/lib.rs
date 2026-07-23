@@ -71,13 +71,10 @@ use async_io::Async;
 #[cfg(unix)]
 use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 
-// AROS is fd-based but not `cfg(unix)`; pull the fd traits from `std::os::fd`.
-#[cfg(target_os = "aros")]
-use async_io::Async;
-#[cfg(target_os = "aros")]
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
-
-#[cfg(windows)]
+// AROS has no live process pipes (the pal captures output via temp files), so
+// child stdio is wrapped with `blocking::Unblock` exactly like Windows rather
+// than the fd-based `Async` path.
+#[cfg(any(windows, target_os = "aros"))]
 use blocking::Unblock;
 
 use futures_lite::{future, io, prelude::*};
@@ -162,10 +159,10 @@ impl Reaper {
                     self.sys.reap(guard).await
                 };
 
-                #[cfg(unix)]
+                #[cfg(any(unix, target_os = "aros"))]
                 async_io::block_on(driver);
 
-                #[cfg(not(unix))]
+                #[cfg(not(any(unix, target_os = "aros")))]
                 future::block_on(driver);
             })
             .expect("cannot spawn async-process thread");
@@ -179,20 +176,14 @@ impl Reaper {
 }
 
 cfg_if::cfg_if! {
-    if #[cfg(windows)] {
-        // Wraps a sync I/O type into an async I/O type.
+    if #[cfg(any(windows, target_os = "aros"))] {
+        // Wraps a sync I/O type into an async I/O type (thread-pool backed).
         fn wrap<T>(io: T) -> io::Result<Unblock<T>> {
             Ok(Unblock::new(io))
         }
     } else if #[cfg(unix)] {
         /// Wrap a file descriptor into a non-blocking I/O type.
         fn wrap<T: std::os::unix::io::AsFd>(io: T) -> io::Result<Async<T>> {
-            Async::new(io)
-        }
-    } else if #[cfg(target_os = "aros")] {
-        /// Wrap a file descriptor into a non-blocking I/O type (AROS is
-        /// fd-based but not `cfg(unix)`; the fd traits live in `std::os::fd`).
-        fn wrap<T: std::os::fd::AsFd>(io: T) -> io::Result<Async<T>> {
             Async::new(io)
         }
     }
@@ -456,9 +447,8 @@ impl fmt::Debug for Child {
 /// previously blocked on input, it becomes unblocked after dropping.
 #[derive(Debug)]
 pub struct ChildStdin(
-    #[cfg(windows)] Unblock<std::process::ChildStdin>,
+    #[cfg(any(windows, target_os = "aros"))] Unblock<std::process::ChildStdin>,
     #[cfg(unix)] Async<std::process::ChildStdin>,
-    #[cfg(target_os = "aros")] Async<std::process::ChildStdin>,
 );
 
 impl ChildStdin {
@@ -482,15 +472,12 @@ impl ChildStdin {
     /// ```
     pub async fn into_stdio(self) -> io::Result<std::process::Stdio> {
         cfg_if::cfg_if! {
-            if #[cfg(windows)] {
+            if #[cfg(any(windows, target_os = "aros"))] {
                 Ok(self.0.into_inner().await.into())
             } else if #[cfg(unix)] {
                 let child_stdin = self.0.into_inner()?;
                 blocking_fd(rustix::fd::AsFd::as_fd(&child_stdin))?;
                 Ok(child_stdin.into())
-            } else if #[cfg(target_os = "aros")] {
-                // AROS keeps host sockets/pipes blocking-emulated; no fd reset needed.
-                Ok(self.0.into_inner()?.into())
             }
         }
     }
@@ -549,9 +536,8 @@ impl TryFrom<ChildStdin> for OwnedFd {
 /// When a [`ChildStdout`] is dropped, the underlying handle gets closed.
 #[derive(Debug)]
 pub struct ChildStdout(
-    #[cfg(windows)] Unblock<std::process::ChildStdout>,
+    #[cfg(any(windows, target_os = "aros"))] Unblock<std::process::ChildStdout>,
     #[cfg(unix)] Async<std::process::ChildStdout>,
-    #[cfg(target_os = "aros")] Async<std::process::ChildStdout>,
 );
 
 impl ChildStdout {
@@ -578,15 +564,12 @@ impl ChildStdout {
     /// ```
     pub async fn into_stdio(self) -> io::Result<std::process::Stdio> {
         cfg_if::cfg_if! {
-            if #[cfg(windows)] {
+            if #[cfg(any(windows, target_os = "aros"))] {
                 Ok(self.0.into_inner().await.into())
             } else if #[cfg(unix)] {
                 let child_stdout = self.0.into_inner()?;
                 blocking_fd(rustix::fd::AsFd::as_fd(&child_stdout))?;
                 Ok(child_stdout.into())
-            } else if #[cfg(target_os = "aros")] {
-                // AROS keeps host sockets/pipes blocking-emulated; no fd reset needed.
-                Ok(self.0.into_inner()?.into())
             }
         }
     }
@@ -630,9 +613,8 @@ impl TryFrom<ChildStdout> for OwnedFd {
 /// When a [`ChildStderr`] is dropped, the underlying handle gets closed.
 #[derive(Debug)]
 pub struct ChildStderr(
-    #[cfg(windows)] Unblock<std::process::ChildStderr>,
+    #[cfg(any(windows, target_os = "aros"))] Unblock<std::process::ChildStderr>,
     #[cfg(unix)] Async<std::process::ChildStderr>,
-    #[cfg(target_os = "aros")] Async<std::process::ChildStderr>,
 );
 
 impl ChildStderr {
@@ -655,15 +637,12 @@ impl ChildStderr {
     /// ```
     pub async fn into_stdio(self) -> io::Result<std::process::Stdio> {
         cfg_if::cfg_if! {
-            if #[cfg(windows)] {
+            if #[cfg(any(windows, target_os = "aros"))] {
                 Ok(self.0.into_inner().await.into())
             } else if #[cfg(unix)] {
                 let child_stderr = self.0.into_inner()?;
                 blocking_fd(rustix::fd::AsFd::as_fd(&child_stderr))?;
                 Ok(child_stderr.into())
-            } else if #[cfg(target_os = "aros")] {
-                // AROS keeps host sockets/pipes blocking-emulated; no fd reset needed.
-                Ok(self.0.into_inner()?.into())
             }
         }
     }

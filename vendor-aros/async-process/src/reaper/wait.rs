@@ -223,5 +223,43 @@ cfg_if::cfg_if! {
         pub(crate) fn available() -> bool {
             true
         }
+    } else if #[cfg(target_os = "aros")] {
+        use async_io::Timer;
+        use std::future::Future;
+        use std::pin::Pin;
+        use std::time::Duration;
+
+        /// Waitable child for AROS: no pidfd and no `SIGCHLD`, so re-check
+        /// `try_wait` on a short timer and let the reaper thread park on it.
+        struct WaitableChild {
+            child: std::process::Child,
+            timer: Timer,
+        }
+
+        impl WaitableChild {
+            fn new(child: std::process::Child) -> io::Result<Self> {
+                Ok(Self { child, timer: Timer::after(Duration::from_millis(50)) })
+            }
+
+            fn get_mut(&mut self) -> &mut std::process::Child {
+                &mut self.child
+            }
+
+            fn poll_wait(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<std::process::ExitStatus>> {
+                if let Some(status) = self.child.try_wait()? {
+                    return Poll::Ready(Ok(status));
+                }
+
+                // Re-arm the timer and register the current task for wake-up.
+                self.timer.set_after(Duration::from_millis(50));
+                let _ = Pin::new(&mut self.timer).poll(cx);
+                Poll::Pending
+            }
+        }
+
+        /// This polling backend is always usable on AROS.
+        pub(crate) fn available() -> bool {
+            true
+        }
     }
 }

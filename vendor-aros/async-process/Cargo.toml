@@ -95,7 +95,7 @@ features = [
 ]
 default-features = false
 
-[target."cfg(windows)".dependencies.blocking]
+[target.'cfg(any(windows, target_os = "aros"))'.dependencies.blocking]
 version = "1.0.0"
 
 [target."cfg(windows)".dev-dependencies.windows-sys]
