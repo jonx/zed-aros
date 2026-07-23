@@ -23077,6 +23077,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "zed_aros_app"
+version = "0.0.0"
+dependencies = [
+ "editor",
+ "getrandom 0.4.1",
+ "gpui",
+ "gpui_platform",
+ "language",
+ "log",
+ "multi_buffer",
+ "release_channel",
+ "semver",
+ "settings",
+ "theme",
+ "theme_settings",
+]
+
+[[package]]
 name = "zed_credentials_provider"
 version = "0.1.0"
 dependencies = [

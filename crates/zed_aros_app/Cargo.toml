@@ -1,0 +1,34 @@
+# zed_aros_app -- minimal AROS entry point that boots editor-core.
+#
+# Built as a staticlib for aarch64-unknown-aros (-Zbuild-std) and linked into a
+# runnable AROS binary by hosted/zed/build.sh (collect-aros + startup.o + the
+# std pal glue, same recipe as hosted/feraille). networking/wasm/terminal are
+# stubbed in the vendored crates; this crate just stands up the gpui app on the
+# AROS platform backend and mounts an Editor.
+[package]
+name = "zed_aros_app"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+gpui.workspace = true
+gpui_platform.workspace = true
+editor.workspace = true
+language.workspace = true
+multi_buffer.workspace = true
+settings.workspace = true
+theme.workspace = true
+theme_settings.workspace = true
+release_channel.workspace = true
+log.workspace = true
+semver.workspace = true
+# Names getrandom::Error in the custom-backend hook (getrandom_aros.rs);
+# selected by --cfg getrandom_backend="custom" in .cargo/config.toml.
+getrandom = "0.4"
+
+[profile.release]
+panic = "abort"
