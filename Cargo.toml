@@ -955,6 +955,11 @@ target-lexicon = { path = "vendor-aros/target-lexicon" }
 dirs-sys-next = { path = "vendor-aros/dirs-sys-next" }
 # Same HOME-based aros arm for dirs-sys 0.5 (used by dirs 6.0).
 dirs-sys = { path = "vendor-aros/dirs-sys" }
+# Vendored mio 1.2.0: AROS is not unix/windows/wasi so it has no os-poll sys
+# backend; route it to mio's own `shell` stub even with os-poll on (networking
+# is stubbed on aros, so the reactor never really runs). See
+# vendor-aros/mio/src/sys/{mod.rs,shell/}.
+mio = { path = "vendor-aros/mio" }
 windows-capture = { git = "https://github.com/zed-industries/windows-capture.git", rev = "f0d6c1b6691db75461b732f6d5ff56eed002eeb9" }
 calloop = { git = "https://github.com/zed-industries/calloop" }
 livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "c3a55bbc207008f1ca3474b6037fdd3c443cad0f" }
