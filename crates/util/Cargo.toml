@@ -46,13 +46,14 @@ gpui_util.workspace = true
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 async-fs.workspace = true
 walkdir.workspace = true
-
-# `smol` pulls the async-io reactor (polling/rustix/errno), and `dirs`/`which`
-# assume a unix/windows model; none exist on AROS. Their only callers are the
-# process/archive/shell modules (gated off in util.rs for aros) and a HOME-based
-# path fallback (paths.rs), so keep them off the AROS graph entirely.
-[target.'cfg(all(not(target_family = "wasm"), not(target_os = "aros")))'.dependencies]
+# `smol` (the async-io reactor stack) now compiles on AROS, so the `command`
+# module can use it there.
 smol.workspace = true
+
+# `dirs`/`which` assume a unix/windows model and don't exist on AROS. Their only
+# callers are the process/archive/shell modules (gated off in util.rs for aros)
+# and a HOME-based path fallback (paths.rs), so keep them off the AROS graph.
+[target.'cfg(all(not(target_family = "wasm"), not(target_os = "aros")))'.dependencies]
 dirs.workspace = true
 which.workspace = true
 
