@@ -933,6 +933,11 @@ async-io = { path = "vendor-aros/async-io" }
 # reaper (AROS has no POSIX signals, so the SIGCHLD reaper is out), fd traits
 # from std::os::fd, and simple into_stdio. See vendor-aros/async-process/src/.
 async-process = { path = "vendor-aros/async-process" }
+# Vendored url 2.5.7: gate the file-path methods (from_file_path/to_file_path/
+# from_directory_path) and their byte-path helpers on aros too, using
+# std::os::aros::ffi::OsStrExt (AROS paths are byte-based like unix). See
+# vendor-aros/url/src/lib.rs.
+url = { path = "vendor-aros/url" }
 windows-capture = { git = "https://github.com/zed-industries/windows-capture.git", rev = "f0d6c1b6691db75461b732f6d5ff56eed002eeb9" }
 calloop = { git = "https://github.com/zed-industries/calloop" }
 livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "c3a55bbc207008f1ca3474b6037fdd3c443cad0f" }
