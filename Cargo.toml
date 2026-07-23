@@ -924,6 +924,7 @@ libc = { path = "vendor-aros/libc" }
 # other change is needed. Byte-identical to 1.1.2 elsewhere. See
 # vendor-aros/rustix/src/maybe_polyfill/std/mod.rs.
 rustix = { path = "vendor-aros/rustix" }
+rustix_0_38 = { path = "vendor-aros/rustix-0.38", package = "rustix" }
 # Vendored async-io 2.6.0 with AROS arms: it gated its fd-based reactor and
 # Async<T> impls on cfg(unix) and hit compile_error!("unsupported platform") on
 # AROS. The aros arms use the unix reactor (over the vendored polling + rustix)
