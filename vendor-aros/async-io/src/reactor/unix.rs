@@ -4,7 +4,10 @@ use polling::{Event, Poller};
 
 use std::fmt;
 use std::io::Result;
+#[cfg(not(target_os = "aros"))]
 use std::os::unix::io::{AsRawFd, BorrowedFd, RawFd};
+#[cfg(target_os = "aros")]
+use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 
 /// The raw registration into the reactor.
 #[doc(hidden)]
