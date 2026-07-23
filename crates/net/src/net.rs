@@ -12,10 +12,69 @@ mod util;
 pub use listener::*;
 #[cfg(target_os = "windows")]
 pub use socket::*;
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_os = "aros")))]
 pub use std::os::unix::net::{UnixListener, UnixStream};
 #[cfg(target_os = "windows")]
 pub use stream::*;
+
+// AROS has no Unix-domain sockets; provide stub types so the abstraction
+// compiles (this is a networking-stubbed build). Any use returns an error.
+#[cfg(target_os = "aros")]
+pub use aros_uds::{UnixListener, UnixStream};
+#[cfg(target_os = "aros")]
+mod aros_uds {
+    use std::io::{self, Read, Write};
+    use std::path::Path;
+
+    fn unsupported<T>() -> io::Result<T> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Unix domain sockets are not available on AROS",
+        ))
+    }
+
+    #[derive(Debug)]
+    pub struct UnixListener(());
+
+    impl UnixListener {
+        pub fn bind<P: AsRef<Path>>(_path: P) -> io::Result<UnixListener> {
+            unsupported()
+        }
+        pub fn accept(&self) -> io::Result<(UnixStream, ())> {
+            unsupported()
+        }
+        pub fn set_nonblocking(&self, _nonblocking: bool) -> io::Result<()> {
+            unsupported()
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct UnixStream(());
+
+    impl UnixStream {
+        pub fn connect<P: AsRef<Path>>(_path: P) -> io::Result<UnixStream> {
+            unsupported()
+        }
+        pub fn set_nonblocking(&self, _nonblocking: bool) -> io::Result<()> {
+            unsupported()
+        }
+    }
+
+    impl Read for UnixStream {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            unsupported()
+        }
+    }
+
+    impl Write for UnixStream {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            unsupported()
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            unsupported()
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -1,5 +1,42 @@
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(not(target_os = "windows"), not(target_os = "aros")))]
 pub use smol::net::unix::{UnixListener, UnixStream};
+
+// AROS has no Unix-domain sockets; async stub types (networking-stubbed build).
+#[cfg(target_os = "aros")]
+pub use aros_uds::{UnixListener, UnixStream};
+#[cfg(target_os = "aros")]
+pub mod aros_uds {
+    use std::io::{Error, ErrorKind, Result};
+    use std::path::Path;
+
+    fn unsupported<T>() -> Result<T> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "Unix domain sockets are not available on AROS",
+        ))
+    }
+
+    #[derive(Debug)]
+    pub struct UnixListener(());
+
+    impl UnixListener {
+        pub fn bind<P: AsRef<Path>>(_path: P) -> Result<Self> {
+            unsupported()
+        }
+        pub async fn accept(&self) -> Result<(UnixStream, ())> {
+            unsupported()
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct UnixStream(());
+
+    impl UnixStream {
+        pub async fn connect<P: AsRef<Path>>(_path: P) -> Result<Self> {
+            unsupported()
+        }
+    }
+}
 
 #[cfg(target_os = "windows")]
 pub use windows::{UnixListener, UnixStream};
