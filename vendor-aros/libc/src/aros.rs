@@ -919,3 +919,15 @@ pub struct ip_mreqn {
 extern "C" {
     pub fn poll(fds: *mut pollfd, nfds: nfds_t, timeout: c_int) -> c_int;
 }
+
+// source-specific multicast (netinet/in.h)
+pub const IP_ADD_SOURCE_MEMBERSHIP: c_int = 25;
+pub const IP_DROP_SOURCE_MEMBERSHIP: c_int = 26;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct ip_mreq_source {
+    pub imr_multiaddr: in_addr,
+    pub imr_sourceaddr: in_addr,
+    pub imr_interface: in_addr,
+}
