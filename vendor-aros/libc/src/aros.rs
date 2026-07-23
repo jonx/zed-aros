@@ -552,6 +552,67 @@ pub const fn CMSG_LEN(length: c_uint) -> c_uint {
 pub const fn CMSG_SPACE(length: c_uint) -> c_uint {
     (cmsg_align(core::mem::size_of::<cmsghdr>()) + cmsg_align(length as usize)) as c_uint
 }
+pub fn CMSG_FIRSTHDR(mhdr: *const msghdr) -> *mut cmsghdr {
+    unsafe {
+        if (*mhdr).msg_controllen as usize >= core::mem::size_of::<cmsghdr>() {
+            (*mhdr).msg_control as *mut cmsghdr
+        } else {
+            core::ptr::null_mut()
+        }
+    }
+}
+pub fn CMSG_NXTHDR(mhdr: *const msghdr, cmsg: *const cmsghdr) -> *mut cmsghdr {
+    unsafe {
+        if ((*cmsg).cmsg_len as usize) < core::mem::size_of::<cmsghdr>() {
+            return core::ptr::null_mut();
+        }
+        let next = (cmsg as usize + cmsg_align((*cmsg).cmsg_len as usize)) as *mut cmsghdr;
+        let max = (*mhdr).msg_control as usize + (*mhdr).msg_controllen as usize;
+        if next.add(1) as usize > max {
+            core::ptr::null_mut()
+        } else {
+            next
+        }
+    }
+}
+
+// ---- remaining protocol / socket / message constants -----------------------
+// Real AROS values (netinet/in.h) where present; Linux-only names AROS lacks
+// are given their conventional values as placeholders.
+pub const IPPROTO_IGMP: c_int = 2;
+pub const IPPROTO_EGP: c_int = 8;
+pub const IPPROTO_PUP: c_int = 12;
+pub const IPPROTO_IDP: c_int = 22;
+pub const IPPROTO_TP: c_int = 29;
+pub const IPPROTO_ROUTING: c_int = 43;
+pub const IPPROTO_FRAGMENT: c_int = 44;
+pub const IPPROTO_RSVP: c_int = 46;
+pub const IPPROTO_GRE: c_int = 47;
+pub const IPPROTO_ESP: c_int = 50;
+pub const IPPROTO_AH: c_int = 51;
+pub const IPPROTO_SCTP: c_int = 132;
+pub const IPPROTO_UDPLITE: c_int = 136;
+pub const IPPROTO_DCCP: c_int = 33;
+pub const IPPROTO_IPIP: c_int = 4;
+pub const IPPROTO_MTP: c_int = 92;
+pub const IPPROTO_BEETPH: c_int = 94;
+pub const IPPROTO_ENCAP: c_int = 98;
+pub const IPPROTO_PIM: c_int = 103;
+pub const IPPROTO_COMP: c_int = 108;
+pub const IPPROTO_MH: c_int = 135;
+pub const IPPROTO_MPLS: c_int = 137;
+pub const IPPROTO_MPTCP: c_int = 262;
+
+pub const IPV6_ADD_MEMBERSHIP: c_int = 12; // IPV6_JOIN_GROUP
+pub const IPV6_DROP_MEMBERSHIP: c_int = 13; // IPV6_LEAVE_GROUP
+pub const TCP_KEEPIDLE: c_int = 256;
+pub const SO_DOMAIN: c_int = 0x1019;
+
+pub const MSG_CMSG_CLOEXEC: c_int = 0x0004_0000;
+// Linux-only message flags AROS lacks (placeholders above AROS's used range).
+pub const MSG_CONFIRM: c_int = 0x0080_0000;
+pub const MSG_ERRQUEUE: c_int = 0x0100_0000;
+pub const MSG_MORE: c_int = 0x0200_0000;
 
 // ---- functions (posixc / bsdsocket linklib) --------------------------------
 
