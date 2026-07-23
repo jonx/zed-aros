@@ -47,8 +47,12 @@ use std::num::NonZeroU32;
 use std::num::NonZeroUsize;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 #[cfg(not(target_os = "wasi"))]
+#[cfg(not(target_os = "aros"))]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(target_os = "aros")]
+use std::os::aros::ffi::OsStrExt;
 #[cfg(all(feature = "all", unix))]
+#[cfg(not(target_os = "aros"))]
 use std::os::unix::net::{UnixDatagram, UnixListener, UnixStream};
 #[cfg(not(target_os = "wasi"))]
 use std::path::Path;

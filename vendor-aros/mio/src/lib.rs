@@ -5,6 +5,7 @@
     unused_imports,
     dead_code
 )]
+#![cfg_attr(target_os = "aros", allow(dead_code, unused_imports, unused_variables, unused_macros))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Disallow warnings when running tests.
 #![cfg_attr(test, deny(warnings))]

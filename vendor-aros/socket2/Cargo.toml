@@ -90,7 +90,7 @@ all = []
 name = "socket2"
 path = "src/lib.rs"
 
-[target.'cfg(any(unix, target_os = "wasi"))'.dependencies.libc]
+[target.'cfg(any(unix, target_os = "wasi", target_os = "aros"))'.dependencies.libc]
 version = "0.2.172"
 
 [target."cfg(windows)".dependencies.windows-sys]
