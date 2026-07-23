@@ -1248,6 +1248,7 @@ impl ExternalAgentServer for LocalRegistryArchiveAgent {
 
                 match registry_archive_kind_for_url(archive_url)? {
                     RegistryArchiveKind::Archive(asset_kind) => {
+                        #[cfg(not(target_os = "aros"))]
                         ::http_client::github_download::download_server_binary(
                             &*http_client,
                             archive_url,
@@ -1256,8 +1257,14 @@ impl ExternalAgentServer for LocalRegistryArchiveAgent {
                             asset_kind,
                         )
                         .await?;
+                        #[cfg(target_os = "aros")]
+                        {
+                            let _ = (&*http_client, sha256.as_deref(), &version_dir, asset_kind);
+                            anyhow::bail!("downloading server binaries is not supported on AROS");
+                        }
                     }
                     RegistryArchiveKind::RawBinary { file_name } => {
+                        #[cfg(not(target_os = "aros"))]
                         ::http_client::github_download::download_server_raw_binary(
                             &*http_client,
                             archive_url,
@@ -1266,6 +1273,11 @@ impl ExternalAgentServer for LocalRegistryArchiveAgent {
                             &file_name,
                         )
                         .await?;
+                        #[cfg(target_os = "aros")]
+                        {
+                            let _ = (&*http_client, sha256.as_deref(), &version_dir, &file_name);
+                            anyhow::bail!("downloading server binaries is not supported on AROS");
+                        }
                     }
                 }
             }
