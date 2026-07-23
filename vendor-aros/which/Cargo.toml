@@ -53,7 +53,7 @@ version = "3.9.0"
 regex = ["dep:regex"]
 tracing = ["dep:tracing"]
 
-[target."cfg(any(unix, target_os = \"wasi\", target_os = \"redox\"))".dependencies.rustix]
+[target."cfg(any(unix, target_os = \"wasi\", target_os = \"redox\", target_os = \"aros\"))".dependencies.rustix]
 version = "0.38.30"
 features = [
     "fs",
