@@ -410,6 +410,7 @@ type IovLen = usize;
     target_os = "espidf",
     target_os = "vita",
     target_os = "cygwin",
+    target_os = "aros",
 ))]
 type IovLen = c_int;
 
