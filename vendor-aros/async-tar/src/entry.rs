@@ -710,7 +710,7 @@ impl<R: Read + Unpin> EntryFields<R> {
             })
         }
 
-        #[cfg(any(unix, target_os = "redox", target_os = "aros"))]
+        #[cfg(any(unix, target_os = "redox"))]
         async fn _set_perms(
             dst: &Path,
             f: Option<&mut fs::File>,
@@ -725,6 +725,19 @@ impl<R: Read + Unpin> EntryFields<R> {
                 Some(f) => f.set_permissions(perm).await,
                 None => fs::set_permissions(dst, perm).await,
             }
+        }
+
+        // AROS has no os::unix PermissionsExt; unpacked-file mode is not applied
+        // (a networking/tooling-stubbed build), which is a benign no-op.
+        #[cfg(target_os = "aros")]
+        #[allow(unused_variables)]
+        async fn _set_perms(
+            dst: &Path,
+            f: Option<&mut fs::File>,
+            mode: u32,
+            preserve: bool,
+        ) -> io::Result<()> {
+            Ok(())
         }
 
         #[cfg(windows)]
