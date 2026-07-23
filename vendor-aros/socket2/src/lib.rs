@@ -109,7 +109,7 @@ macro_rules! from {
     ($from: ty, $for: ty) => {
         impl From<$from> for $for {
             fn from(socket: $from) -> $for {
-                #[cfg(any(unix, all(target_os = "wasi", not(target_env = "p1"))))]
+                #[cfg(any(unix, target_os = "aros", all(target_os = "wasi", not(target_env = "p1"))))]
                 unsafe {
                     <$for>::from_raw_fd(socket.into_raw_fd())
                 }

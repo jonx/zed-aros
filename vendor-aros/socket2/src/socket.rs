@@ -14,7 +14,7 @@ use std::mem::MaybeUninit;
 #[cfg(not(target_os = "nto"))]
 use std::net::Ipv6Addr;
 use std::net::{self, Ipv4Addr, Shutdown};
-#[cfg(any(unix, all(target_os = "wasi", not(target_env = "p1"))))]
+#[cfg(any(unix, target_os = "aros", all(target_os = "wasi", not(target_env = "p1"))))]
 use std::os::fd::{FromRawFd, IntoRawFd};
 #[cfg(windows)]
 use std::os::windows::io::{FromRawSocket, IntoRawSocket};
@@ -220,7 +220,7 @@ impl Socket {
         match res {
             Ok(()) => return Ok(()),
             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {}
-            #[cfg(any(unix, all(target_os = "wasi", not(target_env = "p1"))))]
+            #[cfg(any(unix, target_os = "aros", all(target_os = "wasi", not(target_env = "p1"))))]
             Err(ref e) if e.raw_os_error() == Some(libc::EINPROGRESS) => {}
             Err(e) => return Err(e),
         }
