@@ -36,6 +36,40 @@ pub mod aros_uds {
             unsupported()
         }
     }
+
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+
+    use futures::io::{AsyncRead, AsyncWrite};
+
+    // The stub stream is never actually connected (`connect` errors), so these
+    // report immediate EOF / success; they exist only so the type satisfies the
+    // async I/O bounds callers require.
+    impl AsyncRead for UnixStream {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &mut [u8],
+        ) -> Poll<Result<usize>> {
+            Poll::Ready(Ok(0))
+        }
+    }
+
+    impl AsyncWrite for UnixStream {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            _buf: &[u8],
+        ) -> Poll<Result<usize>> {
+            Poll::Ready(unsupported())
+        }
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+        fn poll_close(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
