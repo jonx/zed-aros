@@ -590,6 +590,7 @@ pub(crate) fn set_ipv6_add_membership(
 ) -> io::Result<()> {
     #[cfg(not(any(
         bsd,
+        target_os = "aros",
         solarish,
         target_os = "haiku",
         target_os = "l4re",
@@ -598,6 +599,7 @@ pub(crate) fn set_ipv6_add_membership(
     use c::IPV6_ADD_MEMBERSHIP;
     #[cfg(any(
         bsd,
+        target_os = "aros",
         solarish,
         target_os = "haiku",
         target_os = "l4re",
@@ -645,6 +647,7 @@ pub(crate) fn set_ipv6_drop_membership(
 ) -> io::Result<()> {
     #[cfg(not(any(
         bsd,
+        target_os = "aros",
         solarish,
         target_os = "haiku",
         target_os = "l4re",
@@ -653,6 +656,7 @@ pub(crate) fn set_ipv6_drop_membership(
     use c::IPV6_DROP_MEMBERSHIP;
     #[cfg(any(
         bsd,
+        target_os = "aros",
         solarish,
         target_os = "haiku",
         target_os = "l4re",
@@ -680,6 +684,7 @@ pub(crate) fn set_ipv6_unicast_hops(fd: BorrowedFd<'_>, hops: Option<u8>) -> io:
 
 #[cfg(any(
     bsd,
+    target_os = "aros",
     linux_like,
     target_os = "aix",
     target_os = "fuchsia",
@@ -694,6 +699,7 @@ pub(crate) fn set_ip_tos(fd: BorrowedFd<'_>, value: u8) -> io::Result<()> {
 
 #[cfg(any(
     bsd,
+    target_os = "aros",
     linux_like,
     target_os = "aix",
     target_os = "fuchsia",
@@ -721,6 +727,7 @@ pub(crate) fn get_ip_recvtos(fd: BorrowedFd<'_>) -> io::Result<bool> {
 
 #[cfg(any(
     bsd,
+    target_os = "aros",
     linux_like,
     target_os = "aix",
     target_os = "fuchsia",
@@ -733,6 +740,7 @@ pub(crate) fn set_ipv6_recvtclass(fd: BorrowedFd<'_>, value: bool) -> io::Result
 
 #[cfg(any(
     bsd,
+    target_os = "aros",
     linux_like,
     target_os = "aix",
     target_os = "fuchsia",

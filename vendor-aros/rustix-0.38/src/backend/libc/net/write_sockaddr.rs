@@ -29,6 +29,7 @@ pub(crate) fn encode_sockaddr_v4(v4: &SocketAddrV4) -> c::sockaddr_in {
     c::sockaddr_in {
         #[cfg(any(
             bsd,
+            target_os = "aros",
             target_os = "aix",
             target_os = "espidf",
             target_os = "haiku",
@@ -60,6 +61,7 @@ unsafe fn write_sockaddr_v4(v4: &SocketAddrV4, storage: *mut SocketAddrStorage) 
 pub(crate) fn encode_sockaddr_v6(v6: &SocketAddrV6) -> c::sockaddr_in6 {
     #[cfg(any(
         bsd,
+        target_os = "aros",
         target_os = "aix",
         target_os = "espidf",
         target_os = "haiku",
@@ -79,6 +81,7 @@ pub(crate) fn encode_sockaddr_v6(v6: &SocketAddrV6) -> c::sockaddr_in6 {
     }
     #[cfg(not(any(
         bsd,
+        target_os = "aros",
         target_os = "aix",
         target_os = "espidf",
         target_os = "haiku",

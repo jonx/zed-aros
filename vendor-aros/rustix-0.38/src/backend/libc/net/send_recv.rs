@@ -13,6 +13,7 @@ bitflags! {
         /// `MSG_CONFIRM`
         #[cfg(not(any(
             bsd,
+            target_os = "aros",
             solarish,
             windows,
             target_os = "aix",
@@ -40,6 +41,7 @@ bitflags! {
         /// `MSG_MORE`
         #[cfg(not(any(
             bsd,
+            target_os = "aros",
             solarish,
             windows,
             target_os = "aix",
@@ -87,6 +89,7 @@ bitflags! {
         /// `MSG_ERRQUEUE`
         #[cfg(not(any(
             bsd,
+            target_os = "aros",
             solarish,
             windows,
             target_os = "aix",

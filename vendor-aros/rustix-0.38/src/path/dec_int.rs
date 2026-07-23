@@ -12,6 +12,8 @@ use core::mem::{self, MaybeUninit};
 use itoa::{Buffer, Integer};
 #[cfg(all(feature = "std", unix))]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(all(feature = "std", target_os = "aros"))]
+use std::os::aros::ffi::{OsStrExt as _, OsStringExt as _};
 #[cfg(all(feature = "std", target_os = "wasi"))]
 use std::os::wasi::ffi::OsStrExt;
 #[cfg(feature = "std")]

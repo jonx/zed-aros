@@ -18,6 +18,7 @@ use core::mem::size_of;
 struct sockaddr_header {
     #[cfg(any(
         bsd,
+        target_os = "aros",
         target_os = "aix",
         target_os = "espidf",
         target_os = "haiku",
@@ -27,6 +28,7 @@ struct sockaddr_header {
     sa_len: u8,
     #[cfg(any(
         bsd,
+        target_os = "aros",
         target_os = "aix",
         target_os = "espidf",
         target_os = "haiku",
@@ -36,6 +38,7 @@ struct sockaddr_header {
     ss_family: u8,
     #[cfg(not(any(
         bsd,
+        target_os = "aros",
         target_os = "aix",
         target_os = "espidf",
         target_os = "haiku",
@@ -56,6 +59,7 @@ unsafe fn read_ss_family(storage: *const c::sockaddr_storage) -> u16 {
     let _ = c::sockaddr {
         #[cfg(any(
             bsd,
+            target_os = "aros",
             target_os = "aix",
             target_os = "espidf",
             target_os = "haiku",
@@ -66,6 +70,7 @@ unsafe fn read_ss_family(storage: *const c::sockaddr_storage) -> u16 {
         sa_len: 0_u8,
         #[cfg(any(
             bsd,
+            target_os = "aros",
             target_os = "aix",
             target_os = "espidf",
             target_os = "haiku",
@@ -76,6 +81,7 @@ unsafe fn read_ss_family(storage: *const c::sockaddr_storage) -> u16 {
         sa_family: 0_u8,
         #[cfg(not(any(
             bsd,
+            target_os = "aros",
             target_os = "aix",
             target_os = "espidf",
             target_os = "haiku",
