@@ -912,6 +912,11 @@ errno = { path = "vendor-aros/errno" }
 # readiness via WaitSelect is Phase B). Inert on every other target. Needs the
 # rust-aros std to expose `std::os::fd` for aros. See vendor-aros/polling/src/aros.rs.
 polling = { path = "vendor-aros/polling" }
+# Vendored libc with an AROS module (aros is not cfg(unix), so upstream gives it
+# an empty module). Phase 1: primitive/socket types, errno, socket+IP constants,
+# sockaddr structs, net/fd fns from the AROS SDK headers. Unblocks rustix ->
+# async-io/mio. Inert on every other target. See vendor-aros/libc/src/aros.rs.
+libc = { path = "vendor-aros/libc" }
 windows-capture = { git = "https://github.com/zed-industries/windows-capture.git", rev = "f0d6c1b6691db75461b732f6d5ff56eed002eeb9" }
 calloop = { git = "https://github.com/zed-industries/calloop" }
 livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "c3a55bbc207008f1ca3474b6037fdd3c443cad0f" }
