@@ -929,6 +929,10 @@ rustix = { path = "vendor-aros/rustix" }
 # AROS. The aros arms use the unix reactor (over the vendored polling + rustix)
 # and pull the fd traits from std::os::fd. See vendor-aros/async-io/src/.
 async-io = { path = "vendor-aros/async-io" }
+# Vendored async-process 2.5.0 with AROS arms: routed through the wait-thread
+# reaper (AROS has no POSIX signals, so the SIGCHLD reaper is out), fd traits
+# from std::os::fd, and simple into_stdio. See vendor-aros/async-process/src/.
+async-process = { path = "vendor-aros/async-process" }
 windows-capture = { git = "https://github.com/zed-industries/windows-capture.git", rev = "f0d6c1b6691db75461b732f6d5ff56eed002eeb9" }
 calloop = { git = "https://github.com/zed-industries/calloop" }
 livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "c3a55bbc207008f1ca3474b6037fdd3c443cad0f" }
