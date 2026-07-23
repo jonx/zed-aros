@@ -697,6 +697,7 @@ impl<R: Read + Unpin> EntryFields<R> {
         if let Ok(mode) = self.header.mode() {
             set_perms(dst, Some(&mut f), mode, self.preserve_permissions).await?;
         }
+        #[cfg(all(unix, feature = "xattr"))]
         if self.unpack_xattrs {
             set_xattrs(self, dst).await?;
         }
