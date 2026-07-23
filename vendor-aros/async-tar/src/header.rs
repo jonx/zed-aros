@@ -727,7 +727,26 @@ impl Header {
         unimplemented!();
     }
 
-    #[cfg(any(unix, target_os = "redox", target_os = "aros"))]
+    // AROS has no os::unix MetadataExt; use std Metadata + default ownership/mode.
+    #[cfg(target_os = "aros")]
+    #[allow(unused_variables)]
+    fn fill_platform_from(&mut self, meta: &fs::Metadata, mode: HeaderMode) {
+        self.set_mtime(0);
+        self.set_uid(0);
+        self.set_gid(0);
+        let fs_mode = if meta.is_dir() { 0o755 } else { 0o644 };
+        self.set_mode(fs_mode);
+        let entry_type = if meta.is_dir() {
+            EntryType::dir()
+        } else if meta.file_type().is_symlink() {
+            EntryType::symlink()
+        } else {
+            EntryType::file()
+        };
+        self.set_entry_type(entry_type);
+    }
+
+    #[cfg(any(unix, target_os = "redox"))]
     fn fill_platform_from(&mut self, meta: &fs::Metadata, mode: HeaderMode) {
         match mode {
             HeaderMode::Complete => {
