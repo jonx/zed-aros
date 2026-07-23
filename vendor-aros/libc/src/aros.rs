@@ -506,6 +506,53 @@ pub const fn makedev(major: c_uint, minor: c_uint) -> dev_t {
     (((major & 0xff) << 8) | (minor & 0xff)) as dev_t
 }
 
+// ---- IPv4 option names (netinet/in.h) --------------------------------------
+pub const IP_TOS: c_int = 3;
+pub const IP_TTL: c_int = 4;
+pub const IP_MULTICAST_IF: c_int = 9;
+pub const IP_MULTICAST_TTL: c_int = 10;
+pub const IP_MULTICAST_LOOP: c_int = 11;
+pub const IP_ADD_MEMBERSHIP: c_int = 12;
+pub const IP_DROP_MEMBERSHIP: c_int = 13;
+
+// ---- dirent d_type values (dirent.h) ---------------------------------------
+pub const DT_UNKNOWN: c_uchar = 0;
+pub const DT_FIFO: c_uchar = 1;
+pub const DT_CHR: c_uchar = 2;
+pub const DT_DIR: c_uchar = 4;
+pub const DT_BLK: c_uchar = 6;
+pub const DT_REG: c_uchar = 8;
+pub const DT_LNK: c_uchar = 10;
+pub const DT_SOCK: c_uchar = 12;
+pub const DT_WHT: c_uchar = 14;
+
+// fcntl record lock. AROS has no struct flock in its headers; rustix needs the
+// type to build its F_SETLK path, so the standard BSD layout is provided.
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct flock {
+    pub l_start: off_t,
+    pub l_len: off_t,
+    pub l_pid: pid_t,
+    pub l_type: c_short,
+    pub l_whence: c_short,
+}
+
+// Control-message helpers (sys/socket.h); _ALIGN rounds to sizeof(long) == 8.
+const fn cmsg_align(len: usize) -> usize {
+    let a = core::mem::size_of::<c_long>();
+    (len + a - 1) & !(a - 1)
+}
+pub fn CMSG_DATA(cmsg: *const cmsghdr) -> *mut c_uchar {
+    unsafe { (cmsg as *mut c_uchar).add(cmsg_align(core::mem::size_of::<cmsghdr>())) }
+}
+pub const fn CMSG_LEN(length: c_uint) -> c_uint {
+    (cmsg_align(core::mem::size_of::<cmsghdr>()) + length as usize) as c_uint
+}
+pub const fn CMSG_SPACE(length: c_uint) -> c_uint {
+    (cmsg_align(core::mem::size_of::<cmsghdr>()) + cmsg_align(length as usize)) as c_uint
+}
+
 // ---- functions (posixc / bsdsocket linklib) --------------------------------
 
 unsafe extern "C" {
