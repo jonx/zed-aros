@@ -865,6 +865,7 @@ impl SockAddr {
 
     /// Returns this address as Unix `SocketAddr` if it is an `AF_UNIX` pathname
     /// address, otherwise returns `None`.
+    #[cfg(not(target_os = "aros"))]
     pub fn as_unix(&self) -> Option<std::os::unix::net::SocketAddr> {
         let path = self.as_pathname()?;
         // SAFETY: we can represent this as a valid pathname, then so can the
