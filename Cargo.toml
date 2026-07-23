@@ -938,6 +938,10 @@ async-process = { path = "vendor-aros/async-process" }
 # std::os::aros::ffi::OsStrExt (AROS paths are byte-based like unix). See
 # vendor-aros/url/src/lib.rs.
 url = { path = "vendor-aros/url" }
+# Vendored serde 1.0.228: implement Serialize/Deserialize for OsStr/OsString on
+# aros too (byte-based like unix, same "Unix" wire variant). See
+# vendor-aros/serde/src/core/{ser,de}/impls.rs.
+serde = { path = "vendor-aros/serde" }
 windows-capture = { git = "https://github.com/zed-industries/windows-capture.git", rev = "f0d6c1b6691db75461b732f6d5ff56eed002eeb9" }
 calloop = { git = "https://github.com/zed-industries/calloop" }
 livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "c3a55bbc207008f1ca3474b6037fdd3c443cad0f" }

@@ -3,7 +3,6 @@
 // reactor and gpui core never uses them, so gate the whole group off there.
 #[cfg(not(target_os = "aros"))]
 pub mod archive;
-#[cfg(not(target_os = "aros"))]
 pub mod command;
 pub mod disambiguate;
 pub mod fs;
