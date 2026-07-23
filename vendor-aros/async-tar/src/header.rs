@@ -1,4 +1,4 @@
-#[cfg(any(unix, target_os = "redox", target_os = "aros"))]
+#[cfg(any(unix, target_os = "redox"))]
 use std::os::unix::prelude::*;
 #[cfg(target_os = "aros")]
 use std::os::aros::ffi::{OsStrExt, OsStringExt};

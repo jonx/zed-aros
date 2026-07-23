@@ -588,9 +588,20 @@ impl<R: Read + Unpin> EntryFields<R> {
                 async_std::os::windows::fs::symlink_file(src, dst).await
             }
 
-            #[cfg(any(unix, target_os = "redox", target_os = "aros"))]
+            #[cfg(any(unix, target_os = "redox"))]
             async fn symlink(src: &Path, dst: &Path) -> io::Result<()> {
                 async_std::os::unix::fs::symlink(src, dst).await
+            }
+
+            // AROS has no async_std os::unix::fs::symlink; tar symlink extraction
+            // is not applied (a tooling-stubbed build).
+            #[cfg(target_os = "aros")]
+            #[allow(unused_variables)]
+            async fn symlink(src: &Path, dst: &Path) -> io::Result<()> {
+                Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "symlinks are not supported on AROS",
+                ))
             }
         } else if kind.is_pax_global_extensions()
             || kind.is_pax_local_extensions()
