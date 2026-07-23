@@ -901,6 +901,11 @@ async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd
 # backend). Byte-identical to stacker 0.1.23 on every other target. See
 # vendor-aros/stacker/src/lib.rs.
 stacker = { path = "vendor-aros/stacker" }
+# Vendored errno 0.3.14 with an AROS arm: the upstream crate compile_errors on
+# unrecognized OSes, and its unix path pulls the `libc` crate (no AROS target).
+# The AROS arm is self-contained (posixc `__stdc_geterrnoptr` + `strerror_r`),
+# inert on every other target. See vendor-aros/errno/src/aros.rs.
+errno = { path = "vendor-aros/errno" }
 windows-capture = { git = "https://github.com/zed-industries/windows-capture.git", rev = "f0d6c1b6691db75461b732f6d5ff56eed002eeb9" }
 calloop = { git = "https://github.com/zed-industries/calloop" }
 livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "c3a55bbc207008f1ca3474b6037fdd3c443cad0f" }
