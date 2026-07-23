@@ -376,7 +376,7 @@ pub(crate) fn offsetof_sun_path() -> usize {
             target_os = "vita"
         )))]
         sun_family: 0_u16,
-        #[cfg(any(bsd, target_os = "horizon", target_os = "nto"))]
+        #[cfg(any(bsd, target_os = "aros", target_os = "horizon", target_os = "nto"))]
         sun_path: [0; 104],
         #[cfg(not(any(
             bsd,

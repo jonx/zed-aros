@@ -54,6 +54,7 @@ fn msg_iov_len(len: usize) -> c::c_int {
 /// Convert the value to a `socklen_t`.
 #[cfg(any(
     bsd,
+    target_os = "aros",
     solarish,
     target_env = "musl",
     target_os = "aix",
@@ -72,6 +73,7 @@ fn msg_control_len(len: usize) -> c::socklen_t {
 /// Convert the value to a `size_t`.
 #[cfg(not(any(
     bsd,
+    target_os = "aros",
     solarish,
     windows,
     target_env = "musl",
