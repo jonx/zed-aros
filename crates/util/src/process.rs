@@ -74,12 +74,18 @@ impl Child {
         self.process
     }
 
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), not(target_os = "aros")))]
     pub fn kill(&mut self) -> Result<()> {
         let pid = self.process.id();
         unsafe {
             libc::killpg(pid as i32, libc::SIGKILL);
         }
+        Ok(())
+    }
+
+    #[cfg(target_os = "aros")]
+    pub fn kill(&mut self) -> Result<()> {
+        self.process.kill()?;
         Ok(())
     }
 
