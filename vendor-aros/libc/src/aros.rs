@@ -880,3 +880,42 @@ pub const IPV6_MULTICAST_HOPS: c_int = 10;
 pub const IPV6_MULTICAST_LOOP: c_int = 11;
 pub const IPV6_V6ONLY: c_int = 26;
 pub const IPV6_TCLASS: c_int = 36;
+
+// ===========================================================================
+// socket2 support: poll + extra IP/IPv6 socket options. AROS has no <poll.h>
+// (no unified poll/select over its heterogeneous descriptors) and lacks a few
+// of these option names; the absent ones get distinct placeholder values so
+// socket2 compiles (those paths aren't exercised by the stubbed reactor).
+// ===========================================================================
+pub const IP_HDRINCL: c_int = 2;
+pub const IP_RECVTOS: c_int = 40; // AROS-absent placeholder
+pub const IPV6_RECVHOPLIMIT: c_int = 37;
+pub const IPV6_RECVTCLASS: c_int = 57; // AROS-absent placeholder
+
+pub const POLLIN: c_short = 0x0001;
+pub const POLLPRI: c_short = 0x0002;
+pub const POLLOUT: c_short = 0x0004;
+pub const POLLERR: c_short = 0x0008;
+pub const POLLHUP: c_short = 0x0010;
+pub const POLLNVAL: c_short = 0x0020;
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct pollfd {
+    pub fd: c_int,
+    pub events: c_short,
+    pub revents: c_short,
+}
+
+// netinet/in.h ip_mreqn (Linux-style; AROS has no ifindex mcast, placeholder shape)
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct ip_mreqn {
+    pub imr_multiaddr: in_addr,
+    pub imr_address: in_addr,
+    pub imr_ifindex: c_int,
+}
+
+extern "C" {
+    pub fn poll(fds: *mut pollfd, nfds: nfds_t, timeout: c_int) -> c_int;
+}
