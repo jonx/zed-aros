@@ -14,6 +14,16 @@ use crate::tty::{ChildEvent, EventedPty, EventedReadWrite, Options};
 pub(crate) const PTY_READ_WRITE_TOKEN: usize = 0;
 pub(crate) const PTY_CHILD_EVENT_TOKEN: usize = 1;
 
+// AROS has no POSIX signal masks; a stub so the Options field type resolves.
+#[derive(Clone, Debug)]
+pub struct SignalMask;
+
+impl SignalMask {
+    pub fn current() -> std::io::Result<Self> {
+        Ok(SignalMask)
+    }
+}
+
 pub struct Pty {
     reader: Empty,
     writer: Sink,
