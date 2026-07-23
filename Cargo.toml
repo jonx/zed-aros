@@ -917,6 +917,13 @@ polling = { path = "vendor-aros/polling" }
 # sockaddr structs, net/fd fns from the AROS SDK headers. Unblocks rustix ->
 # async-io/mio. Inert on every other target. See vendor-aros/libc/src/aros.rs.
 libc = { path = "vendor-aros/libc" }
+# Vendored rustix 1.1.2 with a one-line AROS arm in the std fd polyfill: rustix
+# re-exports the fd traits only for cfg(unix)/wasi, leaving its os::fd module
+# empty on AROS. The arm points at `std::os::fd` (which rust-aros std exposes for
+# aros). build.rs already picks the libc backend for any non-linux OS, so no
+# other change is needed. Byte-identical to 1.1.2 elsewhere. See
+# vendor-aros/rustix/src/maybe_polyfill/std/mod.rs.
+rustix = { path = "vendor-aros/rustix" }
 windows-capture = { git = "https://github.com/zed-industries/windows-capture.git", rev = "f0d6c1b6691db75461b732f6d5ff56eed002eeb9" }
 calloop = { git = "https://github.com/zed-industries/calloop" }
 livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "c3a55bbc207008f1ca3474b6037fdd3c443cad0f" }
