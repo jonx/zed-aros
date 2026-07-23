@@ -32,7 +32,7 @@ pub type sa_family_t = u8;
 pub type in_port_t = u16;
 pub type in_addr_t = u32;
 pub type nfds_t = c_ulong;
-pub type time_t = i64;
+pub type time_t = i32;
 pub type suseconds_t = i64;
 
 // ---- errno (from AROS <sys/errno.h>) ---------------------------------------
@@ -277,6 +277,14 @@ s! {
     pub struct timeval {
         pub tv_sec: time_t,
         pub tv_usec: suseconds_t,
+    }
+
+    // aros/types/timespec_s.h: { time_t tv_sec; long tv_nsec; }
+    // On aarch64 the C compiler pads tv_sec (i32) to 8 before the long,
+    // which a repr(C) { i32, i64 } reproduces exactly.
+    pub struct timespec {
+        pub tv_sec: time_t,
+        pub tv_nsec: c_long,
     }
 }
 
