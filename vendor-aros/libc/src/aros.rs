@@ -187,21 +187,30 @@ pub const STDOUT_FILENO: c_int = 1;
 pub const STDERR_FILENO: c_int = 2;
 
 pub const F_DUPFD: c_int = 0;
-pub const F_GETFD: c_int = 1;
-pub const F_SETFD: c_int = 2;
-pub const F_GETFL: c_int = 3;
-pub const F_SETFL: c_int = 4;
+pub const F_DUPFD_CLOEXEC: c_int = 1;
+pub const F_GETFD: c_int = 2;
+pub const F_SETFD: c_int = 3;
+pub const F_GETFL: c_int = 4;
+pub const F_SETFL: c_int = 5;
 pub const FD_CLOEXEC: c_int = 1;
 
 pub const O_RDONLY: c_int = 0x0001;
 pub const O_WRONLY: c_int = 0x0002;
 pub const O_RDWR: c_int = 0x0003;
-pub const O_NONBLOCK: c_int = 0x0004;
-pub const O_APPEND: c_int = 0x0008;
-pub const O_CREAT: c_int = 0x0200;
-pub const O_TRUNC: c_int = 0x0400;
-pub const O_EXCL: c_int = 0x0800;
-pub const O_CLOEXEC: c_int = 0x0010_0000;
+pub const O_ACCMODE: c_int = 0x0003;
+pub const O_EXEC: c_int = 0x0004;
+pub const O_CREAT: c_int = 0x0040;
+pub const O_EXCL: c_int = 0x0080;
+pub const O_NOCTTY: c_int = 0;
+pub const O_TRUNC: c_int = 0x0200;
+pub const O_APPEND: c_int = 0x0400;
+pub const O_NONBLOCK: c_int = 0x0800;
+pub const O_SYNC: c_int = 0x1000;
+pub const O_ASYNC: c_int = 0x2000;
+pub const O_DSYNC: c_int = 0x4000;
+pub const O_CLOEXEC: c_int = 0x1_0000;
+pub const O_DIRECTORY: c_int = 0x2_0000;
+pub const O_NOFOLLOW: c_int = 0x4_0000;
 
 // ---- structs ---------------------------------------------------------------
 
@@ -325,3 +334,202 @@ unsafe extern "C" {
     ) -> c_int;
     pub fn shutdown(fd: c_int, how: c_int) -> c_int;
 }
+
+// ===========================================================================
+// Phase 2: filesystem + extended constants that rustix references.
+//
+// Values are taken from the AROS SDK headers where AROS defines them. The
+// errno and address-family names below that AROS does NOT provide (Linux/exotic
+// families and errnos) are given distinct placeholder values so that rustix's
+// tables resolve; AROS never returns them.
+// ===========================================================================
+
+// ---- POSIX errnos AROS defines (values from posixc/errno.h) ----------------
+pub const EBADMSG: c_int = 88;
+pub const ECANCELED: c_int = 87;
+pub const EDQUOT: c_int = 69;
+pub const EIDRM: c_int = 82;
+pub const EMULTIHOP: c_int = 94;
+pub const ENODATA: c_int = 89;
+pub const ENOLINK: c_int = 95;
+pub const ENOMSG: c_int = 83;
+pub const ENOSR: c_int = 90;
+pub const ENOSTR: c_int = 91;
+pub const EOVERFLOW: c_int = 84;
+pub const EPROTO: c_int = 96;
+pub const ESTALE: c_int = 70;
+pub const ETIME: c_int = 92;
+pub const EUSERS: c_int = 68;
+
+// ---- errnos AROS does not have (placeholders, never returned) --------------
+pub const EADV: c_int = 200;
+pub const EBADE: c_int = 201;
+pub const EBADFD: c_int = 202;
+pub const EBADR: c_int = 203;
+pub const EBADRQC: c_int = 204;
+pub const EBADSLT: c_int = 205;
+pub const EBFONT: c_int = 206;
+pub const ECHRNG: c_int = 207;
+pub const ECOMM: c_int = 208;
+pub const EDEADLOCK: c_int = 209;
+pub const EDOTDOT: c_int = 210;
+pub const EHWPOISON: c_int = 211;
+pub const EILSEQ: c_int = 212;
+pub const EISNAM: c_int = 213;
+pub const EKEYEXPIRED: c_int = 214;
+pub const EKEYREJECTED: c_int = 215;
+pub const EKEYREVOKED: c_int = 216;
+pub const EL2HLT: c_int = 217;
+pub const EL2NSYNC: c_int = 218;
+pub const EL3HLT: c_int = 219;
+pub const EL3RST: c_int = 220;
+pub const ELIBACC: c_int = 221;
+pub const ELIBBAD: c_int = 222;
+pub const ELIBEXEC: c_int = 223;
+pub const ELIBMAX: c_int = 224;
+pub const ELIBSCN: c_int = 225;
+pub const ELNRNG: c_int = 226;
+pub const EMEDIUMTYPE: c_int = 227;
+pub const ENAVAIL: c_int = 228;
+pub const ENOANO: c_int = 229;
+pub const ENOCSI: c_int = 230;
+pub const ENOKEY: c_int = 231;
+pub const ENOMEDIUM: c_int = 232;
+pub const ENONET: c_int = 233;
+pub const ENOPKG: c_int = 234;
+pub const ENOTNAM: c_int = 235;
+pub const ENOTRECOVERABLE: c_int = 236;
+pub const ENOTUNIQ: c_int = 237;
+pub const EOWNERDEAD: c_int = 238;
+pub const EREMCHG: c_int = 239;
+pub const EREMOTE: c_int = 240;
+pub const EREMOTEIO: c_int = 241;
+pub const ERESTART: c_int = 242;
+pub const ERFKILL: c_int = 243;
+pub const ESRMNT: c_int = 244;
+pub const ESTRPIPE: c_int = 245;
+pub const EUCLEAN: c_int = 246;
+pub const EUNATCH: c_int = 247;
+pub const EXFULL: c_int = 248;
+
+// ---- address families AROS does not have (placeholders) --------------------
+pub const AF_APPLETALK: c_int = 100;
+pub const AF_ASH: c_int = 101;
+pub const AF_ATMPVC: c_int = 102;
+pub const AF_ATMSVC: c_int = 103;
+pub const AF_AX25: c_int = 104;
+pub const AF_BLUETOOTH: c_int = 105;
+pub const AF_BRIDGE: c_int = 106;
+pub const AF_CAN: c_int = 107;
+pub const AF_DECnet: c_int = 108;
+pub const AF_ECONET: c_int = 109;
+pub const AF_IEEE802154: c_int = 110;
+pub const AF_IPX: c_int = 111;
+pub const AF_IRDA: c_int = 112;
+pub const AF_ISDN: c_int = 113;
+pub const AF_IUCV: c_int = 114;
+pub const AF_KEY: c_int = 115;
+pub const AF_LLC: c_int = 116;
+pub const AF_NETBEUI: c_int = 117;
+pub const AF_NETLINK: c_int = 118;
+pub const AF_NETROM: c_int = 119;
+pub const AF_PACKET: c_int = 120;
+pub const AF_PHONET: c_int = 121;
+pub const AF_PPPOX: c_int = 122;
+pub const AF_RDS: c_int = 123;
+pub const AF_ROSE: c_int = 124;
+pub const AF_RXRPC: c_int = 125;
+pub const AF_SECURITY: c_int = 126;
+pub const AF_SNA: c_int = 127;
+pub const AF_TIPC: c_int = 128;
+pub const AF_WANPIPE: c_int = 129;
+pub const AF_X25: c_int = 130;
+
+// ---- *at() flags (posixc/fcntl.h) ------------------------------------------
+pub const AT_FDCWD: c_int = -100;
+pub const AT_EACCESS: c_int = 0x01;
+pub const AT_SYMLINK_NOFOLLOW: c_int = 0x02;
+pub const AT_SYMLINK_FOLLOW: c_int = 0x04;
+pub const AT_REMOVEDIR: c_int = 0x08;
+
+// ---- open()/lseek extras (posixc/fcntl.h, types/seek.h) --------------------
+pub const F_OK: c_int = 0;
+pub const R_OK: c_int = 4;
+pub const W_OK: c_int = 2;
+pub const X_OK: c_int = 1;
+pub const SEEK_SET: c_int = 0;
+pub const SEEK_CUR: c_int = 1;
+pub const SEEK_END: c_int = 2;
+
+// ---- stat() mode bits (POSIX-standard octal) -------------------------------
+pub const S_IFMT: mode_t = 0o170000;
+pub const S_IFIFO: mode_t = 0o010000;
+pub const S_IFCHR: mode_t = 0o020000;
+pub const S_IFDIR: mode_t = 0o040000;
+pub const S_IFBLK: mode_t = 0o060000;
+pub const S_IFREG: mode_t = 0o100000;
+pub const S_IFLNK: mode_t = 0o120000;
+pub const S_IFSOCK: mode_t = 0o140000;
+pub const S_ISUID: mode_t = 0o4000;
+pub const S_ISGID: mode_t = 0o2000;
+pub const S_ISVTX: mode_t = 0o1000;
+pub const S_IRWXU: mode_t = 0o700;
+pub const S_IRUSR: mode_t = 0o400;
+pub const S_IWUSR: mode_t = 0o200;
+pub const S_IXUSR: mode_t = 0o100;
+pub const S_IRWXG: mode_t = 0o070;
+pub const S_IRGRP: mode_t = 0o040;
+pub const S_IWGRP: mode_t = 0o020;
+pub const S_IXGRP: mode_t = 0o010;
+pub const S_IRWXO: mode_t = 0o007;
+pub const S_IROTH: mode_t = 0o004;
+pub const S_IWOTH: mode_t = 0o002;
+pub const S_IXOTH: mode_t = 0o001;
+
+// ---- flock() (posixc/fcntl.h) ----------------------------------------------
+pub const LOCK_SH: c_int = 1;
+pub const LOCK_EX: c_int = 2;
+pub const LOCK_NB: c_int = 4;
+pub const LOCK_UN: c_int = 8;
+
+// ---- posix_fadvise (posixc/fcntl.h; AROS-specific ordering) ----------------
+pub const POSIX_FADV_DONTNEED: c_int = 1;
+pub const POSIX_FADV_NOREUSE: c_int = 2;
+pub const POSIX_FADV_NORMAL: c_int = 3;
+pub const POSIX_FADV_RANDOM: c_int = 4;
+pub const POSIX_FADV_SEQUENTIAL: c_int = 5;
+pub const POSIX_FADV_WILLNEED: c_int = 6;
+
+// ---- fallocate flags AROS does not have (placeholders) ---------------------
+pub const FALLOC_FL_KEEP_SIZE: c_int = 0x01;
+pub const FALLOC_FL_PUNCH_HOLE: c_int = 0x02;
+pub const FALLOC_FL_NO_HIDE_STALE: c_int = 0x04;
+pub const FALLOC_FL_COLLAPSE_RANGE: c_int = 0x08;
+pub const FALLOC_FL_ZERO_RANGE: c_int = 0x10;
+pub const FALLOC_FL_INSERT_RANGE: c_int = 0x20;
+pub const FALLOC_FL_UNSHARE_RANGE: c_int = 0x40;
+
+// ---- statvfs flags ---------------------------------------------------------
+pub const ST_RDONLY: c_ulong = 1;
+pub const ST_NOSUID: c_ulong = 2;
+
+// ---- utimensat sentinels (BSD-style) ---------------------------------------
+pub const UTIME_NOW: c_long = -1;
+pub const UTIME_OMIT: c_long = -2;
+
+// ---- ioctl requests (BSD encoding) -----------------------------------------
+pub const FIONBIO: c_ulong = 0x8004_667e;
+pub const FIONREAD: c_ulong = 0x4004_667f;
+
+// ---- extra socket / IP option names ----------------------------------------
+pub const SCM_RIGHTS: c_int = 0x01;
+pub const TCP_NODELAY: c_int = 1;
+pub const TCP_MAXSEG: c_int = 2;
+pub const TCP_KEEPINTVL: c_int = 512;
+pub const TCP_KEEPCNT: c_int = 1024;
+pub const IPV6_UNICAST_HOPS: c_int = 4;
+pub const IPV6_MULTICAST_IF: c_int = 9;
+pub const IPV6_MULTICAST_HOPS: c_int = 10;
+pub const IPV6_MULTICAST_LOOP: c_int = 11;
+pub const IPV6_V6ONLY: c_int = 26;
+pub const IPV6_TCLASS: c_int = 36;
