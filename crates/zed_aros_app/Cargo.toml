@@ -3,8 +3,8 @@
 # Built as a staticlib for aarch64-unknown-aros (-Zbuild-std) and linked into a
 # runnable AROS binary by hosted/zed/build.sh (collect-aros + startup.o + the
 # std pal glue, same recipe as hosted/feraille). networking/wasm/terminal are
-# stubbed in the vendored crates; this crate just stands up the gpui app on the
-# AROS platform backend and mounts an Editor.
+# stubbed in the vendored crates; this crate stands up a gpui Workspace on the
+# AROS platform backend (editor tabs + file tree + status bar).
 [package]
 name = "zed_aros_app"
 version = "0.0.0"
@@ -24,12 +24,33 @@ settings.workspace = true
 theme.workspace = true
 theme_settings.workspace = true
 release_channel.workspace = true
+workspace.workspace = true
+project.workspace = true
+client.workspace = true
+node_runtime.workspace = true
+fs.workspace = true
+db.workspace = true
+clock.workspace = true
+go_to_line.workspace = true
+# NOTE: project_panel (file tree) and language_selector (the language status
+# item) are deferred -- both pull ... -> prompt_store -> heed -> LMDB, whose C
+# needs pread/pwrite/fdatasync/sigwait that AROS lacks. They come back once that
+# chain is cut or LMDB ported. The status bar keeps the cursor-position item.
+# The bundled tree-sitter grammars + language configs/queries (load-grammars
+# compiles the grammar C). We register languages from `grammars` directly rather
+# than via the `languages` crate, which pulls the LSP adapters (node tooling +
+# Microsoft's 25-crate `pet` python suite) -- none of which is usable while LSP
+# is OS-gated, and much of which lacks an AROS arm.
+grammars = { workspace = true, features = ["load-grammars"] }
+# FakeHttpClient (networking is stubbed) and Session::test come from these
+# crates' test-support features; the fake HTTP client is the right "no network"
+# backing for a Client here.
+http_client = { workspace = true, features = ["test-support"] }
+session = { workspace = true, features = ["test-support"] }
 log.workspace = true
 semver.workspace = true
-# Custom getrandom backends (arc4random_buf) for the AROS target. 0.3/0.4
-# share the v03 hook, selected by --cfg getrandom_backend="custom" in
-# .cargo/config.toml; some deps still pull 0.2, whose custom backend is
-# registered via its own macro (needs the "custom" feature).
+# Custom getrandom backends (arc4random_buf) for the AROS target; see
+# getrandom_aros.rs. 0.3/0.4 share the v03 hook via --cfg getrandom_backend.
 getrandom = "0.4"
 getrandom02 = { package = "getrandom", version = "0.2", features = ["custom"] }
 

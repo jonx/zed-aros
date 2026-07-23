@@ -906,6 +906,17 @@ async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd
 # symbol set and the program runs it at startup (hosted/zed/zed_aros_main.c).
 # Inert on every other target. See vendor-aros/inventory/src/lib.rs.
 inventory = { path = "vendor-aros/inventory" }
+# Vendored is-terminal with an AROS arm: upstream gates the fd traits to
+# unix/wasi/hermit and forces no_std elsewhere, so aros got neither std nor the
+# AsFd import. The arm keeps std and reports "not a terminal" (AROS has no
+# isatty). Inert on every other target. See vendor-aros/is-terminal/src/lib.rs.
+is-terminal = { path = "vendor-aros/is-terminal" }
+# Vendored page_size with an AROS arm: upstream gates its page-size helpers to
+# unix/windows/wasm; aros got none. The arm returns a fixed 4 KiB. Inert on
+# every other target. See vendor-aros/page_size/src/lib.rs.
+page_size = { path = "vendor-aros/page_size" }
+# (pet-fs is no longer in the graph: zed_aros_app registers grammars directly
+# instead of via the `languages` crate, which pulled the python `pet` suite.)
 # Vendored stacker with an AROS arm: stack growth is a no-op there (no libc mmap
 # backend). Byte-identical to stacker 0.1.23 on every other target. See
 # vendor-aros/stacker/src/lib.rs.
