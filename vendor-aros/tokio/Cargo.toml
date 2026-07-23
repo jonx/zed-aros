@@ -931,7 +931,7 @@ features = ["std"]
 optional = true
 default-features = false
 
-[target."cfg(any(unix, target_os = "aros"))".dependencies.libc]
+[target.'cfg(any(unix, target_os = "aros"))'.dependencies.libc]
 version = "0.2.168"
 optional = true
 
