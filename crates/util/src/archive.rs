@@ -6,7 +6,7 @@ use async_zip::base::read;
 use futures::AsyncSeek;
 use futures::{AsyncRead, io::BufReader};
 
-#[cfg(any(unix, windows))]
+#[cfg(any(unix, windows, target_os = "aros"))]
 fn archive_path_is_normal(filename: &str) -> bool {
     Path::new(filename).components().all(|c| {
         matches!(
@@ -65,7 +65,7 @@ pub async fn extract_zip<R: AsyncRead + Unpin>(destination: &Path, reader: R) ->
     Ok(())
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, target_os = "aros"))]
 pub async fn extract_zip<R: AsyncRead + Unpin>(destination: &Path, reader: R) -> Result<()> {
     // Unix needs file permissions copied when extracting.
     // This is only possible to do when a reader impls `AsyncSeek` and `seek::ZipFileReader` is used.
@@ -82,7 +82,7 @@ pub async fn extract_zip<R: AsyncRead + Unpin>(destination: &Path, reader: R) ->
     extract_seekable_zip(destination, file).await
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, target_os = "aros"))]
 pub async fn extract_seekable_zip<R: AsyncRead + AsyncSeek + Unpin>(
     destination: &Path,
     reader: R,
@@ -172,7 +172,7 @@ mod tests {
 
             let filename = relative_path.display().to_string();
 
-            #[cfg(unix)]
+            #[cfg(any(unix, target_os = "aros"))]
             {
                 let mut builder =
                     ZipEntryBuilder::new(filename.into(), async_zip::Compression::Deflate);
@@ -245,7 +245,7 @@ mod tests {
         });
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, target_os = "aros"))]
     #[test]
     fn test_extract_zip_preserves_executable_permissions() {
         use std::os::unix::fs::PermissionsExt;
@@ -279,7 +279,7 @@ mod tests {
         });
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, target_os = "aros"))]
     #[test]
     fn test_extract_zip_sets_default_permissions() {
         use std::os::unix::fs::PermissionsExt;
