@@ -11,6 +11,9 @@ use polling::{Event, PollMode, Poller};
 use crate::event::{OnResize, WindowSize};
 use crate::tty::{ChildEvent, EventedPty, EventedReadWrite, Options};
 
+pub(crate) const PTY_READ_WRITE_TOKEN: usize = 0;
+pub(crate) const PTY_CHILD_EVENT_TOKEN: usize = 1;
+
 pub struct Pty {
     reader: Empty,
     writer: Sink,
