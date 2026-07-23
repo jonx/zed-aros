@@ -153,6 +153,7 @@ pub(crate) fn open(path: &CStr, oflags: OFlags, mode: Mode) -> io::Result<OwnedF
     #[cfg(any(
         apple,
         freebsdlike,
+        target_os = "aros",
         all(target_os = "android", target_pointer_width = "32")
     ))]
     let mode: c::c_uint = mode.bits().into();
@@ -161,6 +162,7 @@ pub(crate) fn open(path: &CStr, oflags: OFlags, mode: Mode) -> io::Result<OwnedF
     #[cfg(not(any(
         apple,
         freebsdlike,
+        target_os = "aros",
         all(target_os = "android", target_pointer_width = "32")
     )))]
     let mode: c::mode_t = mode.bits() as _;
@@ -221,6 +223,7 @@ pub(crate) fn openat(
     #[cfg(any(
         apple,
         freebsdlike,
+        target_os = "aros",
         all(target_os = "android", target_pointer_width = "32")
     ))]
     let mode: c::c_uint = mode.bits().into();
@@ -229,6 +232,7 @@ pub(crate) fn openat(
     #[cfg(not(any(
         apple,
         freebsdlike,
+        target_os = "aros",
         all(target_os = "android", target_pointer_width = "32")
     )))]
     let mode: c::mode_t = mode.bits() as _;
