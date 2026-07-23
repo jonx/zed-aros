@@ -963,6 +963,7 @@ mio = { path = "vendor-aros/mio" }
 # Vendored ring 0.17.14: route its SystemRandom fill to the getrandom crate on
 # aros (add aros to the rand.rs backend cfg) so SecureRandom is impl'd for rustls.
 ring = { path = "vendor-aros/ring" }
+is_executable = { path = "vendor-aros/is_executable" }
 # Vendored tokio 1.52.1: libc dep for aros + os::fd-based net fd-impl aros arms.
 tokio = { path = "vendor-aros/tokio" }
 # Vendored filetime 0.2.29 with an AROS arm (aros.rs); satisfies ^0.2.26.
@@ -1125,3 +1126,7 @@ ignored = [
     "documented",
     "sea-orm-macros",
 ]
+
+[patch."https://github.com/zed-industries/trash-rs"]
+# AROS platform stub (no recycle bin); see vendor-aros/trash-rs/src/aros.rs
+trash = { path = "vendor-aros/trash-rs" }
