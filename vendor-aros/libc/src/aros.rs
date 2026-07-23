@@ -202,6 +202,12 @@ pub const F_GETFD: c_int = 2;
 pub const F_SETFD: c_int = 3;
 pub const F_GETFL: c_int = 4;
 pub const F_SETFL: c_int = 5;
+pub const F_GETLK: c_int = 6;
+pub const F_SETLK: c_int = 7;
+pub const F_SETLKW: c_int = 8;
+pub const F_RDLCK: c_int = 0;
+pub const F_WRLCK: c_int = 1;
+pub const F_UNLCK: c_int = 2;
 pub const FD_CLOEXEC: c_int = 1;
 
 pub const O_RDONLY: c_int = 0x0001;
@@ -376,11 +382,18 @@ s! {
     // char[PATH_MAX + 1]; only the offset matters to callers that walk by
     // d_reclen, so a nominal length is used for the trailing array.
     pub struct dirent {
-        pub d_fileno: ino_t,
+        pub d_ino: ino_t, // d_fileno in the C header; d_ino is the POSIX alias
         pub d_off: off_t,
         pub d_reclen: c_ushort,
         pub d_type: c_uchar,
         pub d_name: [c_char; 1024],
+    }
+
+    // sys/un.h (SUNPATHLEN == 104)
+    pub struct sockaddr_un {
+        pub sun_len: c_uchar,
+        pub sun_family: sa_family_t,
+        pub sun_path: [c_char; 104],
     }
 }
 
