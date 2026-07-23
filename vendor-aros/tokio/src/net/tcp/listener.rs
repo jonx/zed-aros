@@ -274,7 +274,7 @@ impl TcpListener {
     pub fn into_std(self) -> io::Result<std::net::TcpListener> {
         #[cfg(any(unix, target_os = "aros"))]
         {
-            use std::os::unix::io::{FromRawFd, IntoRawFd};
+            use std::os::fd::{FromRawFd, IntoRawFd};
             self.io
                 .into_inner()
                 .map(IntoRawFd::into_raw_fd)
@@ -408,7 +408,7 @@ impl fmt::Debug for TcpListener {
 #[cfg(any(unix, target_os = "aros"))]
 mod sys {
     use super::TcpListener;
-    use std::os::unix::prelude::*;
+    use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 
     impl AsRawFd for TcpListener {
         fn as_raw_fd(&self) -> RawFd {

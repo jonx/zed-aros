@@ -257,7 +257,7 @@ impl TcpStream {
     pub fn into_std(self) -> io::Result<std::net::TcpStream> {
         #[cfg(any(unix, target_os = "aros"))]
         {
-            use std::os::unix::io::{FromRawFd, IntoRawFd};
+            use std::os::fd::{FromRawFd, IntoRawFd};
             self.io
                 .into_inner()
                 .map(IntoRawFd::into_raw_fd)
@@ -1533,7 +1533,7 @@ impl AsRef<Self> for TcpStream {
 #[cfg(any(unix, target_os = "aros"))]
 mod sys {
     use super::TcpStream;
-    use std::os::unix::prelude::*;
+    use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, IntoRawFd, OwnedFd, RawFd};
 
     impl AsRawFd for TcpStream {
         fn as_raw_fd(&self) -> RawFd {
