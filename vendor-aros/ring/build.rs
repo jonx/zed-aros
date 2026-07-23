@@ -170,6 +170,13 @@ fn cpp_flags(compiler: &cc::Tool) -> &'static [&'static str] {
 // None means "any OS" or "any target". The first match in sequence order is
 // taken.
 const ASM_TARGETS: &[AsmTarget] = &[
+    // AROS is ELF/aarch64; use the same asm as Linux (the Rust side references
+    // the aarch64 asm symbols unconditionally, so it must be compiled).
+    AsmTarget {
+        oss: &["aros"],
+        arch: AARCH64,
+        perlasm_format: "linux64",
+    },
     AsmTarget {
         oss: LINUX_ABI,
         arch: AARCH64,
