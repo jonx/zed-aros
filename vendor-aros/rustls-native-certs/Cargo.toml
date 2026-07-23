@@ -79,7 +79,7 @@ version = "1"
 [dev-dependencies.x509-parser]
 version = "0.18"
 
-[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies.openssl-probe]
+[target.'cfg(all(any(unix, target_os = "aros"), not(target_os = "macos")))'.dependencies.openssl-probe]
 version = "0.2"
 
 [target.'cfg(target_os = "macos")'.dependencies.security-framework]
