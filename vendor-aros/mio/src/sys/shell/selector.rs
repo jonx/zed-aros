@@ -11,6 +11,10 @@ pub type Events = Vec<Event>;
 pub struct Selector {}
 
 impl Selector {
+    pub fn new() -> io::Result<Selector> {
+        os_required!();
+    }
+
     pub fn try_clone(&self) -> io::Result<Selector> {
         os_required!();
     }
