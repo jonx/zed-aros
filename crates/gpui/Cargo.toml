@@ -116,6 +116,12 @@ heapless.workspace = true
 [target.'cfg(not(target_os = "aros"))'.dependencies]
 proptest = { workspace = true, optional = true }
 
+# ring (rustls crypto provider) pulls getrandom 0.2, which has no AROS backend
+# and predates the getrandom_backend cfg; enable its `custom` feature so it
+# builds. The final AROS binary registers a handler over posixc arc4random_buf.
+[target.'cfg(target_os = "aros")'.dependencies]
+getrandom02 = { package = "getrandom", version = "0.2", features = ["custom"] }
+
 [target.'cfg(target_family = "wasm")'.dependencies]
 getrandom = { version = "0.3.4", features = ["wasm_js"] }
 uuid = { workspace = true, features = ["js"] }
