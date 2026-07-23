@@ -26,9 +26,12 @@ theme_settings.workspace = true
 release_channel.workspace = true
 log.workspace = true
 semver.workspace = true
-# Names getrandom::Error in the custom-backend hook (getrandom_aros.rs);
-# selected by --cfg getrandom_backend="custom" in .cargo/config.toml.
+# Custom getrandom backends (arc4random_buf) for the AROS target. 0.3/0.4
+# share the v03 hook, selected by --cfg getrandom_backend="custom" in
+# .cargo/config.toml; some deps still pull 0.2, whose custom backend is
+# registered via its own macro (needs the "custom" feature).
 getrandom = "0.4"
+getrandom02 = { package = "getrandom", version = "0.2", features = ["custom"] }
 
 [profile.release]
 panic = "abort"

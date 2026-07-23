@@ -23081,6 +23081,7 @@ name = "zed_aros_app"
 version = "0.0.0"
 dependencies = [
  "editor",
+ "getrandom 0.2.16",
  "getrandom 0.4.1",
  "gpui",
  "gpui_platform",
