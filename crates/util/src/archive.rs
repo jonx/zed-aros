@@ -128,6 +128,7 @@ pub async fn extract_seekable_zip<R: AsyncRead + AsyncSeek + Unpin>(
                 .await
                 .with_context(|| format!("extracting into file {path:?}"))?;
 
+            #[cfg(not(target_os = "aros"))]
             if let Some(perms) = entry.unix_permissions()
                 && perms != 0o000
             {
