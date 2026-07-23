@@ -255,7 +255,7 @@ impl TcpStream {
     /// [`std::net::TcpStream`]: std::net::TcpStream
     /// [`set_nonblocking`]: fn@std::net::TcpStream::set_nonblocking
     pub fn into_std(self) -> io::Result<std::net::TcpStream> {
-        #[cfg(unix)]
+        #[cfg(any(unix, target_os = "aros"))]
         {
             use std::os::unix::io::{FromRawFd, IntoRawFd};
             self.io
@@ -1530,7 +1530,7 @@ impl AsRef<Self> for TcpStream {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, target_os = "aros"))]
 mod sys {
     use super::TcpStream;
     use std::os::unix::prelude::*;

@@ -272,7 +272,7 @@ impl TcpListener {
     /// [`std::net::TcpListener`]: std::net::TcpListener
     /// [`set_nonblocking`]: fn@std::net::TcpListener::set_nonblocking
     pub fn into_std(self) -> io::Result<std::net::TcpListener> {
-        #[cfg(unix)]
+        #[cfg(any(unix, target_os = "aros"))]
         {
             use std::os::unix::io::{FromRawFd, IntoRawFd};
             self.io
@@ -405,7 +405,7 @@ impl fmt::Debug for TcpListener {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, target_os = "aros"))]
 mod sys {
     use super::TcpListener;
     use std::os::unix::prelude::*;
