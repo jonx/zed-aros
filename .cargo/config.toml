@@ -33,12 +33,9 @@ rustflags = [
 
 [env]
 MACOSX_DEPLOYMENT_TARGET = "10.15.7"
-# C code built by cc-rs for the AROS target must follow the AROS C recipe:
-# host clang, ELF target triple, large code model, x18 reserved (this code
-# runs inside AROS processes). The machine-specific pieces (the SDK include
-# roots and the llvm-ar archiver, under the AROS build tree) are set portably
-# in crates/gpui_aros/build.rs from $AROS_BUILD/$AROS_CROSSTOOLS (default
-# ~/aros-build, ~/aros-crosstools), so this file stays path-free. The
-# target-suffixed env names keep host builds unaffected.
-CC_aarch64_unknown_aros = "clang"
-CFLAGS_aarch64_unknown_aros = "--target=aarch64-unknown-none-elf -fno-pic -mcmodel=large -ffixed-x18 -D__arm64__ -O2"
+# The AROS C recipe for cc-rs (CC_/AR_/CFLAGS_aarch64_unknown_aros) is NOT set
+# here: it carries machine-specific SDK-include roots and cargo's [env] cannot
+# interpolate $AROS_BUILD, so keeping it here would either hardcode a path or
+# ship a silently-wrong value. Instead source hosted/zed/aros-env.sh (in the
+# graft repo) before building for AROS; it derives the recipe from $AROS_BUILD
+# and $AROS_CROSSTOOLS. frontier-check.sh sources it automatically.
