@@ -35,6 +35,14 @@ pub type nfds_t = c_ulong;
 pub type time_t = i32;
 pub type suseconds_t = i64;
 
+// filesystem types (aros/types/*; __USE_FILE_OFFSET64 is NOTIMPL on AROS, so
+// the default non-LFS typedefs are authoritative).
+pub type dev_t = u64; // unsigned AROS_INTPTR_TYPE
+pub type ino_t = i32; // signed AROS_32BIT_TYPE (default, non-LFS)
+pub type nlink_t = u16; // unsigned AROS_16BIT_TYPE
+pub type blksize_t = i64; // signed AROS_64BIT_TYPE (__WORDSIZE==64)
+pub type blkcnt_t = i64; // signed AROS_64BIT_TYPE (__WORDSIZE==64)
+
 // ---- errno (from AROS <sys/errno.h>) ---------------------------------------
 
 pub const EPERM: c_int = 1;
@@ -286,6 +294,148 @@ s! {
         pub tv_sec: time_t,
         pub tv_nsec: c_long,
     }
+
+    // aros/posixc/sys/stat.h, default (non-LFS) branch. Field widths and the
+    // aarch64 natural padding give sizeof == 120, align 8.
+    pub struct stat {
+        pub st_dev: dev_t,
+        pub st_ino: ino_t,
+        pub st_mode: mode_t,
+        pub st_nlink: nlink_t,
+        pub st_uid: uid_t,
+        pub st_gid: gid_t,
+        pub st_rdev: dev_t,
+        pub st_size: off_t,
+        pub st_atim: timespec,
+        pub st_mtim: timespec,
+        pub st_ctim: timespec,
+        pub st_blksize: blksize_t,
+        pub st_blocks: blkcnt_t,
+        pub st_flags: c_ulong,
+        pub st_gen: c_ulong,
+    }
+
+    // sys/socket.h
+    pub struct cmsghdr {
+        pub cmsg_len: socklen_t,
+        pub cmsg_level: c_int,
+        pub cmsg_type: c_int,
+    }
+
+    // netinet/in.h
+    pub struct ip_mreq {
+        pub imr_multiaddr: in_addr,
+        pub imr_interface: in_addr,
+    }
+
+    pub struct ipv6_mreq {
+        pub ipv6mr_multiaddr: in6_addr,
+        pub ipv6mr_interface: c_uint,
+    }
+}
+
+// Opaque directory stream handle (readdir family operates through a pointer).
+#[allow(missing_debug_implementations, missing_copy_implementations)]
+pub enum DIR {}
+
+// dlsym "default" handle sentinel (no real dlfcn on AROS; null is a safe stand-in).
+pub const RTLD_DEFAULT: *mut c_void = core::ptr::null_mut();
+
+// ---- filesystem + extended syscalls (posixc) -------------------------------
+extern "C" {
+    pub fn open(path: *const c_char, oflag: c_int, ...) -> c_int;
+    pub fn openat(dirfd: c_int, path: *const c_char, oflag: c_int, ...) -> c_int;
+    pub fn stat(path: *const c_char, buf: *mut stat) -> c_int;
+    pub fn fstat(fd: c_int, buf: *mut stat) -> c_int;
+    pub fn lstat(path: *const c_char, buf: *mut stat) -> c_int;
+    pub fn fstatat(dirfd: c_int, path: *const c_char, buf: *mut stat, flags: c_int) -> c_int;
+    pub fn access(path: *const c_char, amode: c_int) -> c_int;
+    pub fn faccessat(dirfd: c_int, path: *const c_char, amode: c_int, flags: c_int) -> c_int;
+    pub fn chmod(path: *const c_char, mode: mode_t) -> c_int;
+    pub fn fchmod(fd: c_int, mode: mode_t) -> c_int;
+    pub fn fchmodat(dirfd: c_int, path: *const c_char, mode: mode_t, flags: c_int) -> c_int;
+    pub fn chown(path: *const c_char, owner: uid_t, group: gid_t) -> c_int;
+    pub fn fchown(fd: c_int, owner: uid_t, group: gid_t) -> c_int;
+    pub fn fchownat(
+        dirfd: c_int,
+        path: *const c_char,
+        owner: uid_t,
+        group: gid_t,
+        flags: c_int,
+    ) -> c_int;
+    pub fn lseek(fd: c_int, offset: off_t, whence: c_int) -> off_t;
+    pub fn ftruncate(fd: c_int, length: off_t) -> c_int;
+    pub fn fsync(fd: c_int) -> c_int;
+    pub fn fdatasync(fd: c_int) -> c_int;
+    pub fn sync();
+    pub fn link(src: *const c_char, dst: *const c_char) -> c_int;
+    pub fn linkat(
+        olddirfd: c_int,
+        oldpath: *const c_char,
+        newdirfd: c_int,
+        newpath: *const c_char,
+        flags: c_int,
+    ) -> c_int;
+    pub fn unlink(path: *const c_char) -> c_int;
+    pub fn unlinkat(dirfd: c_int, path: *const c_char, flags: c_int) -> c_int;
+    pub fn rename(oldpath: *const c_char, newpath: *const c_char) -> c_int;
+    pub fn renameat(
+        olddirfd: c_int,
+        oldpath: *const c_char,
+        newdirfd: c_int,
+        newpath: *const c_char,
+    ) -> c_int;
+    pub fn mkdir(path: *const c_char, mode: mode_t) -> c_int;
+    pub fn mkdirat(dirfd: c_int, path: *const c_char, mode: mode_t) -> c_int;
+    pub fn mknodat(dirfd: c_int, path: *const c_char, mode: mode_t, dev: dev_t) -> c_int;
+    pub fn rmdir(path: *const c_char) -> c_int;
+    pub fn symlink(target: *const c_char, linkpath: *const c_char) -> c_int;
+    pub fn symlinkat(target: *const c_char, newdirfd: c_int, linkpath: *const c_char) -> c_int;
+    pub fn readlink(path: *const c_char, buf: *mut c_char, bufsz: size_t) -> ssize_t;
+    pub fn readlinkat(
+        dirfd: c_int,
+        path: *const c_char,
+        buf: *mut c_char,
+        bufsz: size_t,
+    ) -> ssize_t;
+    pub fn dup2(oldfd: c_int, newfd: c_int) -> c_int;
+    pub fn dup3(oldfd: c_int, newfd: c_int, flags: c_int) -> c_int;
+    pub fn pread(fd: c_int, buf: *mut c_void, count: size_t, offset: off_t) -> ssize_t;
+    pub fn pwrite(fd: c_int, buf: *const c_void, count: size_t, offset: off_t) -> ssize_t;
+    pub fn readv(fd: c_int, iov: *const iovec, iovcnt: c_int) -> ssize_t;
+    pub fn writev(fd: c_int, iov: *const iovec, iovcnt: c_int) -> ssize_t;
+    pub fn preadv(fd: c_int, iov: *const iovec, iovcnt: c_int, offset: off_t) -> ssize_t;
+    pub fn pwritev(fd: c_int, iov: *const iovec, iovcnt: c_int, offset: off_t) -> ssize_t;
+    pub fn sendmsg(fd: c_int, msg: *const msghdr, flags: c_int) -> ssize_t;
+    pub fn recvmsg(fd: c_int, msg: *mut msghdr, flags: c_int) -> ssize_t;
+    pub fn socketpair(domain: c_int, ty: c_int, proto: c_int, sv: *mut c_int) -> c_int;
+    pub fn accept4(
+        fd: c_int,
+        addr: *mut sockaddr,
+        len: *mut socklen_t,
+        flags: c_int,
+    ) -> c_int;
+    pub fn flock(fd: c_int, operation: c_int) -> c_int;
+    pub fn ioctl(fd: c_int, request: c_ulong, ...) -> c_int;
+    pub fn getuid() -> uid_t;
+    pub fn geteuid() -> uid_t;
+    pub fn getgid() -> gid_t;
+    pub fn getegid() -> gid_t;
+    pub fn futimens(fd: c_int, times: *const timespec) -> c_int;
+    pub fn utimensat(
+        dirfd: c_int,
+        path: *const c_char,
+        times: *const timespec,
+        flags: c_int,
+    ) -> c_int;
+    pub fn posix_fadvise(fd: c_int, offset: off_t, len: off_t, advice: c_int) -> c_int;
+    pub fn posix_fallocate(fd: c_int, offset: off_t, len: off_t) -> c_int;
+    pub fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
+    pub fn closedir(dirp: *mut DIR) -> c_int;
+    pub fn fdopendir(fd: c_int) -> *mut DIR;
+    pub fn rewinddir(dirp: *mut DIR);
+    pub fn seekdir(dirp: *mut DIR, loc: c_long);
+    pub fn dirfd(dirp: *mut DIR) -> c_int;
 }
 
 // ---- functions (posixc / bsdsocket linklib) --------------------------------
