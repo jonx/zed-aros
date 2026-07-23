@@ -942,6 +942,9 @@ url = { path = "vendor-aros/url" }
 # aros too (byte-based like unix, same "Unix" wire variant). See
 # vendor-aros/serde/src/core/{ser,de}/impls.rs.
 serde = { path = "vendor-aros/serde" }
+# serde_core holds the actual trait impls serde re-exports; patch OsStr/OsString
+# ser+de for aros here too. See vendor-aros/serde_core/src/{ser,de}/impls.rs.
+serde_core = { path = "vendor-aros/serde_core" }
 windows-capture = { git = "https://github.com/zed-industries/windows-capture.git", rev = "f0d6c1b6691db75461b732f6d5ff56eed002eeb9" }
 calloop = { git = "https://github.com/zed-industries/calloop" }
 livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "c3a55bbc207008f1ca3474b6037fdd3c443cad0f" }
