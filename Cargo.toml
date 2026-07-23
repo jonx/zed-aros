@@ -898,6 +898,14 @@ features = [
 
 [patch.crates-io]
 async-task = { git = "https://github.com/smol-rs/async-task.git", rev = "b4486cd71e4e94fbda54ce6302444de14f4d190e" }
+# Vendored inventory 0.3.21 with an AROS arm: upstream gates its .init_array
+# link_section to a fixed target_os list that omits aros, so on AROS the
+# life-before-main constructors that populate the registry never land in
+# .init_array and never run (zed's settings registry ends up empty). The arm
+# adds aros to that list; collect-aros gathers .init_array into the INIT_ARRAY
+# symbol set and the program runs it at startup (hosted/zed/zed_aros_main.c).
+# Inert on every other target. See vendor-aros/inventory/src/lib.rs.
+inventory = { path = "vendor-aros/inventory" }
 # Vendored stacker with an AROS arm: stack growth is a no-op there (no libc mmap
 # backend). Byte-identical to stacker 0.1.23 on every other target. See
 # vendor-aros/stacker/src/lib.rs.
