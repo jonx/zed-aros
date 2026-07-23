@@ -964,6 +964,7 @@ mio = { path = "vendor-aros/mio" }
 # aros (add aros to the rand.rs backend cfg) so SecureRandom is impl'd for rustls.
 ring = { path = "vendor-aros/ring" }
 is_executable = { path = "vendor-aros/is_executable" }
+rustls-platform-verifier = { path = "vendor-aros/rustls-platform-verifier" }
 # Vendored tokio 1.52.1: libc dep for aros + os::fd-based net fd-impl aros arms.
 tokio = { path = "vendor-aros/tokio" }
 # Vendored filetime 0.2.29 with an AROS arm (aros.rs); satisfies ^0.2.26.
