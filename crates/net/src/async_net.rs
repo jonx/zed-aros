@@ -40,7 +40,7 @@ pub mod aros_uds {
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
-    use futures::io::{AsyncRead, AsyncWrite};
+    use smol::io::{AsyncRead, AsyncWrite};
 
     // The stub stream is never actually connected (`connect` errors), so these
     // report immediate EOF / success; they exist only so the type satisfies the
