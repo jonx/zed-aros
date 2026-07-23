@@ -42,6 +42,8 @@ pub type ino_t = i32; // signed AROS_32BIT_TYPE (default, non-LFS)
 pub type nlink_t = u16; // unsigned AROS_16BIT_TYPE
 pub type blksize_t = i64; // signed AROS_64BIT_TYPE (__WORDSIZE==64)
 pub type blkcnt_t = i64; // signed AROS_64BIT_TYPE (__WORDSIZE==64)
+pub type fsblkcnt_t = u64; // AROS_64BIT_TYPE (default, non-LFS on aarch64)
+pub type fsfilcnt_t = u64;
 
 // ---- errno (from AROS <sys/errno.h>) ---------------------------------------
 
@@ -332,6 +334,54 @@ s! {
         pub ipv6mr_multiaddr: in6_addr,
         pub ipv6mr_interface: c_uint,
     }
+
+    // sys/mount.h
+    pub struct fsid_t {
+        pub val: [i32; 2],
+    }
+
+    // aros/posixc/sys/statvfs.h (all fields 64-bit on aarch64)
+    pub struct statvfs {
+        pub f_bsize: c_ulong,
+        pub f_frsize: c_ulong,
+        pub f_blocks: fsblkcnt_t,
+        pub f_bfree: fsblkcnt_t,
+        pub f_bavail: fsblkcnt_t,
+        pub f_files: fsfilcnt_t,
+        pub f_ffree: fsfilcnt_t,
+        pub f_favail: fsfilcnt_t,
+        pub f_fsid: c_ulong,
+        pub f_flag: c_ulong,
+        pub f_namemax: c_ulong,
+    }
+
+    // aros/posixc/sys/mount.h (legacy BSD statfs; MNAMELEN == 90)
+    pub struct statfs {
+        pub f_type: c_short,
+        pub f_flags: c_short,
+        pub f_fsize: c_long,
+        pub f_bsize: c_long,
+        pub f_blocks: c_long,
+        pub f_bfree: c_long,
+        pub f_bavail: c_long,
+        pub f_files: c_long,
+        pub f_ffree: c_long,
+        pub f_fsid: fsid_t,
+        pub f_spare: [c_long; 9],
+        pub f_mntonname: [c_char; 90],
+        pub f_mntfromname: [c_char; 90],
+    }
+
+    // aros/posixc/dirent.h, default (non-LFS) branch. d_name is declared
+    // char[PATH_MAX + 1]; only the offset matters to callers that walk by
+    // d_reclen, so a nominal length is used for the trailing array.
+    pub struct dirent {
+        pub d_fileno: ino_t,
+        pub d_off: off_t,
+        pub d_reclen: c_ushort,
+        pub d_type: c_uchar,
+        pub d_name: [c_char; 1024],
+    }
 }
 
 // Opaque directory stream handle (readdir family operates through a pointer).
@@ -436,6 +486,24 @@ extern "C" {
     pub fn rewinddir(dirp: *mut DIR);
     pub fn seekdir(dirp: *mut DIR, loc: c_long);
     pub fn dirfd(dirp: *mut DIR) -> c_int;
+    pub fn opendir(path: *const c_char) -> *mut DIR;
+    pub fn readdir(dirp: *mut DIR) -> *mut dirent;
+    pub fn statvfs(path: *const c_char, buf: *mut statvfs) -> c_int;
+    pub fn fstatvfs(fd: c_int, buf: *mut statvfs) -> c_int;
+    pub fn statfs(path: *const c_char, buf: *mut statfs) -> c_int;
+    pub fn fstatfs(fd: c_int, buf: *mut statfs) -> c_int;
+}
+
+// Device-number helpers. AROS device numbers are nominal; this uses the
+// conventional 8-bit minor split so the values round-trip.
+pub const fn major(dev: dev_t) -> c_uint {
+    ((dev >> 8) & 0xff) as c_uint
+}
+pub const fn minor(dev: dev_t) -> c_uint {
+    (dev & 0xff) as c_uint
+}
+pub const fn makedev(major: c_uint, minor: c_uint) -> dev_t {
+    (((major & 0xff) << 8) | (minor & 0xff)) as dev_t
 }
 
 // ---- functions (posixc / bsdsocket linklib) --------------------------------
