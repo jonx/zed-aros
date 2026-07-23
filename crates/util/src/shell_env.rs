@@ -39,7 +39,7 @@ pub async fn capture(
     #[cfg(target_os = "aros")]
     {
         let _ = (shell_path, args, directory);
-        return Ok(collections::HashMap::new());
+        return Ok(collections::HashMap::default());
     }
 }
 
