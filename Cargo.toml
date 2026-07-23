@@ -949,6 +949,10 @@ serde_core = { path = "vendor-aros/serde_core" }
 # build.rs Triple::from_str("aarch64-unknown-aros") stops panicking. See
 # vendor-aros/target-lexicon/src/targets.rs.
 target-lexicon = { path = "vendor-aros/target-lexicon" }
+# Vendored dirs-sys-next 0.1.2: home_dir/user_dir/user_dirs were unix-gated (use
+# os::unix::ffi + getpwuid_r, neither on aros). Add a HOME-env-only aros arm. See
+# vendor-aros/dirs-sys-next/src/lib.rs.
+dirs-sys-next = { path = "vendor-aros/dirs-sys-next" }
 windows-capture = { git = "https://github.com/zed-industries/windows-capture.git", rev = "f0d6c1b6691db75461b732f6d5ff56eed002eeb9" }
 calloop = { git = "https://github.com/zed-industries/calloop" }
 livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "c3a55bbc207008f1ca3474b6037fdd3c443cad0f" }
