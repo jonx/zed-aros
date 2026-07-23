@@ -23,6 +23,8 @@ use util::command::new_command;
 use std::os::fd::{AsFd, AsRawFd};
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(target_os = "aros")]
+use std::os::aros::ffi::OsStrExt;
 
 #[cfg(unix)]
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
@@ -1008,6 +1010,8 @@ impl Fs for RealFs {
 
         #[cfg(unix)]
         let inode = metadata.ino();
+        #[cfg(target_os = "aros")]
+        let inode = 0u64;
 
         #[cfg(windows)]
         let inode = file_id(path).await?;
@@ -1017,6 +1021,8 @@ impl Fs for RealFs {
 
         #[cfg(unix)]
         let is_fifo = metadata.file_type().is_fifo();
+        #[cfg(target_os = "aros")]
+        let is_fifo = false;
 
         let path_buf = path.to_path_buf();
         let is_executable = self
