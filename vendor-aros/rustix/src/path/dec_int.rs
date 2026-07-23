@@ -14,6 +14,8 @@ use core::mem::{self, MaybeUninit};
 use core::num::{NonZeroU8, NonZeroUsize};
 #[cfg(all(feature = "std", unix))]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(all(feature = "std", target_os = "aros"))]
+use std::os::aros::ffi::OsStrExt;
 #[cfg(all(
     feature = "std",
     target_os = "wasi",
