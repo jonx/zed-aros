@@ -16,6 +16,7 @@ use crate::net::TcpStream;
 #[cfg(any(
     unix,
     target_os = "hermit",
+    target_os = "aros",
     all(target_os = "wasi", not(target_env = "p1"))
 ))]
 use crate::sys::tcp::set_reuseaddr;
