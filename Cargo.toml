@@ -1135,3 +1135,7 @@ ignored = [
 [patch."https://github.com/zed-industries/trash-rs"]
 # AROS platform stub (no recycle bin); see vendor-aros/trash-rs/src/aros.rs
 trash = { path = "vendor-aros/trash-rs" }
+
+[patch."https://github.com/zed-industries/alacritty"]
+# AROS tty stub (no pseudo-terminal); see vendor-aros/alacritty/alacritty_terminal/src/tty/aros.rs
+alacritty_terminal = { path = "vendor-aros/alacritty/alacritty_terminal" }
