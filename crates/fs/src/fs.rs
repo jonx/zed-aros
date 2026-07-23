@@ -410,6 +410,11 @@ pub trait FileHandle: Send + Sync + std::fmt::Debug {
 }
 
 impl FileHandle for std::fs::File {
+    #[cfg(target_os = "aros")]
+    fn current_path(&self, _: &std::sync::Arc<dyn Fs>) -> Result<PathBuf> {
+        anyhow::bail!("recovering a file path from its handle is not supported on AROS")
+    }
+
     #[cfg(target_os = "macos")]
     fn current_path(&self, _: &Arc<dyn Fs>) -> Result<PathBuf> {
         use std::{
