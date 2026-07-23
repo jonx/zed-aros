@@ -906,6 +906,12 @@ stacker = { path = "vendor-aros/stacker" }
 # The AROS arm is self-contained (posixc `__stdc_geterrnoptr` + `strerror_r`),
 # inert on every other target. See vendor-aros/errno/src/aros.rs.
 errno = { path = "vendor-aros/errno" }
+# Vendored polling with a native AROS backend: hosted AROS has no unified
+# poll()/select() across its heterogeneous descriptors, so the reactor is a
+# std-sync software poller (Phase A: drives timers/wakeups/notify; socket
+# readiness via WaitSelect is Phase B). Inert on every other target. Needs the
+# rust-aros std to expose `std::os::fd` for aros. See vendor-aros/polling/src/aros.rs.
+polling = { path = "vendor-aros/polling" }
 windows-capture = { git = "https://github.com/zed-industries/windows-capture.git", rev = "f0d6c1b6691db75461b732f6d5ff56eed002eeb9" }
 calloop = { git = "https://github.com/zed-industries/calloop" }
 livekit = { git = "https://github.com/zed-industries/livekit-rust-sdks", rev = "c3a55bbc207008f1ca3474b6037fdd3c443cad0f" }
