@@ -117,6 +117,10 @@ pub fn os_name() -> String {
     {
         "Windows".to_string()
     }
+    #[cfg(target_os = "aros")]
+    {
+        "AROS".to_string()
+    }
 }
 
 /// Note: This might do blocking IO! Only call from background threads
@@ -182,6 +186,9 @@ pub fn os_version() -> String {
            } else {
                "unknown".to_string()
            }
+       }
+       target_os = "aros" => {
+           "unknown".to_string()
        }
     }
 }
