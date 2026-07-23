@@ -61,10 +61,18 @@ pub(super) struct AlacrittySearch {
     search: RegexSearch,
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "aros")))]
 impl From<&AlacrittyPty> for ProcessIdGetter {
     fn from(pty: &AlacrittyPty) -> Self {
         Self::new(pty.file().as_raw_fd(), pty.child().id())
+    }
+}
+
+// AROS has no PTY; the stub Pty carries no fd or child, so report neither.
+#[cfg(target_os = "aros")]
+impl From<&AlacrittyPty> for ProcessIdGetter {
+    fn from(_pty: &AlacrittyPty) -> Self {
+        Self::new(-1, 0)
     }
 }
 

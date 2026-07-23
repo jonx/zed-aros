@@ -28,7 +28,18 @@ impl ProcessIdGetter {
     }
 }
 
-#[cfg(unix)]
+// AROS has no PTY; the terminal is stubbed, so only the fallback pid applies.
+#[cfg(target_os = "aros")]
+impl ProcessIdGetter {
+    fn pid(&self) -> Option<Pid> {
+        if self.fallback_pid > 0 {
+            return Some(Pid::from_u32(self.fallback_pid));
+        }
+        None
+    }
+}
+
+#[cfg(all(unix, not(target_os = "aros")))]
 impl ProcessIdGetter {
     fn pid(&self) -> Option<Pid> {
         // Negative pid means error.

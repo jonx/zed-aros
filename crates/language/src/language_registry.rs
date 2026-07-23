@@ -1017,7 +1017,9 @@ impl LanguageRegistry {
                                 #[cfg(target_os = "aros")]
                                 {
                                     let _ = (grammar_name, &wasm_bytes);
-                                    anyhow::bail!("wasm grammars are not supported on AROS")
+                                    anyhow::Result::<tree_sitter::Language>::Err(anyhow!(
+                                        "wasm grammars are not supported on AROS"
+                                    ))
                                 }
                             })
                             .map_err(Arc::new);
