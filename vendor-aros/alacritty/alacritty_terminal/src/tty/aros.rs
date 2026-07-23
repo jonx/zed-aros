@@ -15,7 +15,7 @@ pub(crate) const PTY_READ_WRITE_TOKEN: usize = 0;
 pub(crate) const PTY_CHILD_EVENT_TOKEN: usize = 1;
 
 // AROS has no POSIX signal masks; a stub so the Options field type resolves.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SignalMask;
 
 impl SignalMask {
