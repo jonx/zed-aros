@@ -32,6 +32,50 @@ use workspace::{AppState, OpenMode, Workspace};
 
 const DEFAULT_KEYMAP: &str = include_str!("../../../assets/keymaps/default-macos.json");
 
+gpui::actions!(zed_aros, [Quit]);
+
+/// A minimal app menu built from actions in the crates we link (Zed's own
+/// `app_menus` pulls terminal/collab/diagnostics crates we don't). gpui_aros
+/// renders these as native Intuition menus (right-mouse-button).
+fn app_menus() -> Vec<gpui::Menu> {
+    use editor::actions::{Copy, Cut, Paste, Redo, SelectAll, Undo};
+    use gpui::{Menu, MenuItem};
+    vec![
+        Menu {
+            name: "Zed on AROS".into(),
+            disabled: false,
+            items: vec![MenuItem::action("Quit", Quit)],
+        },
+        Menu {
+            name: "File".into(),
+            disabled: false,
+            items: vec![
+                MenuItem::action("New", workspace::NewFile),
+                MenuItem::action(
+                    "Save",
+                    workspace::Save {
+                        save_intent: Some(workspace::SaveIntent::Save),
+                    },
+                ),
+            ],
+        },
+        Menu {
+            name: "Edit".into(),
+            disabled: false,
+            items: vec![
+                MenuItem::action("Undo", Undo),
+                MenuItem::action("Redo", Redo),
+                MenuItem::separator(),
+                MenuItem::action("Cut", Cut),
+                MenuItem::action("Copy", Copy),
+                MenuItem::action("Paste", Paste),
+                MenuItem::separator(),
+                MenuItem::action("Select All", SelectAll),
+            ],
+        },
+    ]
+}
+
 /// Build a minimal AppState: real filesystem + real language registry, but a
 /// fake HTTP client (networking is stubbed) and an unavailable node runtime.
 fn build_app_state(cx: &mut App) -> Arc<AppState> {
@@ -125,6 +169,10 @@ pub extern "C" fn zed_aros_main() -> i32 {
         // Map syntax-highlight captures to theme colors; without this the
         // grammars load but every token renders in the default foreground.
         app_state.languages.set_theme(theme::ActiveTheme::theme(cx).clone());
+
+        // Native Intuition menus (right-mouse-button on AROS).
+        cx.on_action(|_: &Quit, cx: &mut App| cx.quit());
+        cx.set_menus(app_menus());
 
         // Zed's real macOS keymap; bindings for unregistered actions are skipped.
         let bindings = match KeymapFile::load(DEFAULT_KEYMAP, cx) {
