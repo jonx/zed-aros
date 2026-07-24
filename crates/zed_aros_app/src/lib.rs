@@ -165,6 +165,7 @@ pub extern "C" fn zed_aros_main() -> i32 {
         editor::init(cx);
         workspace::init(app_state.clone(), cx);
         go_to_line::init(cx);
+        project_panel::init(cx);
 
         // Map syntax-highlight captures to theme colors; without this the
         // grammars load but every token renders in the default foreground.
@@ -242,4 +243,19 @@ fn add_status_bar_items(
         status_bar.add_left_item(marker, window, cx);
         status_bar.add_right_item(cursor_position, window, cx);
     });
+
+    // Load the file tree (project panel) into the left dock, then open the dock.
+    cx.spawn_in(window, async move |workspace_handle, cx| {
+        if let Ok(panel) =
+            project_panel::ProjectPanel::load(workspace_handle.clone(), cx.clone()).await
+        {
+            workspace_handle
+                .update_in(cx, |workspace, window, cx| {
+                    workspace.add_panel(panel, window, cx);
+                    workspace.focus_panel::<project_panel::ProjectPanel>(window, cx);
+                })
+                .ok();
+        }
+    })
+    .detach();
 }

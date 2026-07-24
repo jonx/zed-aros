@@ -32,10 +32,11 @@ fs.workspace = true
 db.workspace = true
 clock.workspace = true
 go_to_line.workspace = true
-# NOTE: project_panel (file tree) and language_selector (the language status
-# item) are deferred -- both pull ... -> prompt_store -> heed -> LMDB, whose C
-# needs pread/pwrite/fdatasync/sigwait that AROS lacks. They come back once that
-# chain is cut or LMDB ported. The status bar keeps the cursor-position item.
+project_panel.workspace = true
+# NOTE: language_selector (the language status item) is still deferred -- it
+# pulls ... -> prompt_store -> heed -> LMDB (POSIX calls AROS lacks). project_panel
+# (file tree) is back: its git_ui dependency (the only heed path) is now
+# non-AROS-only, gated off on AROS.
 # The bundled tree-sitter grammars + language configs/queries (load-grammars
 # compiles the grammar C). We register languages from `grammars` directly rather
 # than via the `languages` crate, which pulls the LSP adapters (node tooling +
