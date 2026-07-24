@@ -462,6 +462,67 @@ impl LanguageServer {
         Ok(server)
     }
 
+    /// Connects to a language server over TCP instead of spawning a local
+    /// process. The remote endpoint speaks the same LSP framing over the socket
+    /// as a local server would over its stdio, so all message handling is
+    /// shared with `new` via `new_internal`. Used where local process spawning
+    /// is unavailable and a host-side bridge runs the real server and relays
+    /// its stdio to this socket.
+    pub async fn new_tcp(
+        addr: std::net::SocketAddr,
+        stderr_capture: Arc<Mutex<Option<String>>>,
+        server_id: LanguageServerId,
+        server_name: LanguageServerName,
+        binary: LanguageServerBinary,
+        root_path: &Path,
+        code_action_kinds: Option<Vec<CodeActionKind>>,
+        workspace_folders: Option<Arc<Mutex<BTreeSet<Uri>>>>,
+        cx: &mut AsyncApp,
+    ) -> Result<Self> {
+        let working_dir = if root_path.is_dir() {
+            root_path
+        } else {
+            root_path.parent().unwrap_or_else(|| Path::new("/"))
+        };
+        let root_uri = Uri::from_file_path(&working_dir)
+            .map_err(|()| anyhow!("{working_dir:?} is not a valid URI"))?;
+        log::info!(
+            "connecting to language server bridge at {addr}, working directory: {working_dir:?}"
+        );
+        let stream = smol::net::TcpStream::connect(addr)
+            .await
+            .with_context(|| format!("failed to connect to language server bridge at {addr}"))?;
+        // A socket is full-duplex; clone shares the same reactor source, so one
+        // half writes requests (stdin) while the other reads responses (stdout).
+        let stdin = stream.clone();
+        let stdout = stream;
+        let server = Self::new_internal(
+            server_id,
+            server_name,
+            stdin,
+            stdout,
+            None::<smol::net::TcpStream>,
+            stderr_capture,
+            None,
+            code_action_kinds,
+            binary,
+            root_uri,
+            workspace_folders,
+            cx,
+            move |notification| {
+                log::info!(
+                    "Language server with id {} sent unhandled notification {}:\n{}",
+                    server_id,
+                    notification.method,
+                    serde_json::to_string_pretty(&notification.params).unwrap(),
+                );
+                false
+            },
+        );
+
+        Ok(server)
+    }
+
     fn new_internal<Stdin, Stdout, Stderr, F>(
         server_id: LanguageServerId,
         server_name: LanguageServerName,
