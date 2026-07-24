@@ -1,0 +1,19 @@
+# sockprobe -- minimal async-stack reproducer: connect via smol::net::TcpStream
+# (exactly like lsp::LanguageServer::new_tcp), clone into read/write halves, and
+# read a large streamed pattern back verifying byte-exactness. Isolates the LSP
+# OOM from the whole editor: same reactor + unified-fd shim, tiny binary.
+[package]
+name = "sockprobe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+smol = "2.0"
+futures-lite = "2"
+
+[profile.release]
+panic = "abort"

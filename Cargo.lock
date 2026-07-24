@@ -17053,6 +17053,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sockprobe"
+version = "0.0.0"
+dependencies = [
+ "futures-lite 2.6.1",
+ "smol",
+]
+
+[[package]]
 name = "spdx"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"

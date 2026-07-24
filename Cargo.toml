@@ -230,6 +230,7 @@ members = [
     "crates/zed",
     "crates/zed_actions",
     "crates/zed_aros_app",
+    "crates/sockprobe",
     "crates/windows_resources",
     "crates/zed_credentials_provider",
     "crates/zed_env_vars",
