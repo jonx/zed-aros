@@ -1532,6 +1532,7 @@ pub trait UrlExt {
 impl UrlExt for url::Url {
     // Copied from `url::Url::to_file_path`, but the `cfg` handling is replaced with runtime branching on `PathStyle`
     fn to_file_path_ext(&self, source_path_style: PathStyle) -> Result<PathBuf, ()> {
+        let computed = (|| -> Result<PathBuf, ()> {
         if let Some(segments) = self.path_segments() {
             let host = match self.host() {
                 None | Some(url::Host::Domain("localhost")) => None,
@@ -1666,6 +1667,23 @@ impl UrlExt for url::Url {
             Ok(path)
         }
         Err(())
+        })();
+        let path = computed?;
+        // On AROS, a file:// URI from the host language server encodes a host
+        // path; map it back to the AROS host-shared volume so it matches the
+        // editor's worktree paths. Non-shared paths are left as-is.
+        #[cfg(target_os = "aros")]
+        {
+            let root = std::env::var("ZED_AROS_HOST_SHARED")
+                .unwrap_or_else(|_| "/Users/jkn/AROS/Shared".to_string());
+            let root = root.strip_suffix('/').unwrap_or(&root);
+            let s = path.to_string_lossy();
+            if let Some(rest) = s.strip_prefix(root) {
+                let rest = rest.trim_start_matches('/');
+                return Ok(PathBuf::from(format!("MacRW:{rest}")));
+            }
+        }
+        Ok(path)
     }
 }
 

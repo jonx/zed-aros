@@ -10486,9 +10486,9 @@ dependencies = [
 [[package]]
 name = "lsp-types"
 version = "0.95.1"
-source = "git+https://github.com/zed-industries/lsp-types?rev=f4dfa89a21ca35cd929b70354b1583fabae325f8#f4dfa89a21ca35cd929b70354b1583fabae325f8"
 dependencies = [
  "bitflags 1.3.2",
+ "percent-encoding",
  "serde",
  "serde_json",
  "url",
@@ -23074,11 +23074,15 @@ dependencies = [
 name = "zed_aros_app"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
+ "async-io",
+ "async-trait",
  "client",
  "clock",
  "db",
  "editor",
  "fs",
+ "futures-lite 2.6.1",
  "getrandom 0.2.16",
  "getrandom 0.4.1",
  "go_to_line",
@@ -23088,6 +23092,7 @@ dependencies = [
  "http_client",
  "language",
  "log",
+ "lsp",
  "multi_buffer",
  "node_runtime",
  "project",
