@@ -51,6 +51,10 @@ session = { workspace = true, features = ["test-support"] }
 log.workspace = true
 semver.workspace = true
 uuid.workspace = true
+# The hidden `--nettest` async smoke test (verifies the unified-fd shim +
+# reactor Phase B drive real sockets).
+async-io = "2.6"
+futures-lite = "2"
 # Custom getrandom backends (arc4random_buf) for the AROS target; see
 # getrandom_aros.rs. 0.3/0.4 share the v03 hook via --cfg getrandom_backend.
 getrandom = "0.4"

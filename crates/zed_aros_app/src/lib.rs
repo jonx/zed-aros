@@ -146,9 +146,44 @@ fn register_languages(registry: &Arc<language::LanguageRegistry>) {
     }
 }
 
+/// Hidden async-reactor smoke test (`ZedAros --nettest`): connect to a host TCP
+/// echo server on 127.0.0.1:9977 via async-io and round-trip a line. Exercises
+/// the unified-fd shim + polling Phase B on a real socket.
+fn run_nettest() -> i32 {
+    use futures_lite::{AsyncReadExt, AsyncWriteExt};
+    use std::net::{Ipv4Addr, SocketAddr, TcpStream};
+
+    let addr = SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 9977));
+    let result: std::io::Result<Vec<u8>> = async_io::block_on(async move {
+        let mut stream = async_io::Async::<TcpStream>::connect(addr).await?;
+        stream.write_all(b"ping\n").await?;
+        let mut buf = [0u8; 64];
+        let n = stream.read(&mut buf).await?;
+        Ok(buf[..n].to_vec())
+    });
+    match result {
+        Ok(v) if v.starts_with(b"ping") => {
+            println!("NETTEST PASS: echoed {} bytes", v.len());
+            0
+        }
+        Ok(v) => {
+            println!("NETTEST FAIL: got {:?}", String::from_utf8_lossy(&v));
+            1
+        }
+        Err(e) => {
+            println!("NETTEST ERR: {e}");
+            2
+        }
+    }
+}
+
 /// Boot the editor. Called by the C shim; returns a process exit code.
 #[no_mangle]
 pub extern "C" fn zed_aros_main() -> i32 {
+    if std::env::args().nth(1).as_deref() == Some("--nettest") {
+        return run_nettest();
+    }
+
     // In-memory workspace/kvp database: no data-dir on AROS.
     unsafe { std::env::set_var("ZED_STATELESS", "1") };
 
