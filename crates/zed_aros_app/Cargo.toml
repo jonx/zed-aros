@@ -49,6 +49,7 @@ http_client = { workspace = true, features = ["test-support"] }
 session = { workspace = true, features = ["test-support"] }
 log.workspace = true
 semver.workspace = true
+uuid.workspace = true
 # Custom getrandom backends (arc4random_buf) for the AROS target; see
 # getrandom_aros.rs. 0.3/0.4 share the v03 hook via --cfg getrandom_backend.
 getrandom = "0.4"

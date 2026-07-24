@@ -13,9 +13,21 @@ mod getrandom_aros;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use gpui::{App, AppContext, Window};
+use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, Window, px, size};
 use gpui_platform::application;
+use uuid::Uuid;
 use settings::{KeymapFile, KeymapFileLoadResult};
+
+/// Window options for the workspace: an explicit centered size that fits the
+/// AROS screen, so the whole layout (including the bottom status bar) is on
+/// screen rather than clipped by a screen-sized default window.
+fn build_window_options(_: Option<Uuid>, cx: &mut App) -> WindowOptions {
+    let bounds = Bounds::centered(None, size(px(760.0), px(520.0)), cx);
+    WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        ..Default::default()
+    }
+}
 use workspace::{AppState, OpenMode, Workspace};
 
 const DEFAULT_KEYMAP: &str = include_str!("../../../assets/keymaps/default-macos.json");
@@ -52,7 +64,7 @@ fn build_app_state(cx: &mut App) -> Arc<AppState> {
         user_store,
         workspace_store,
         fs,
-        build_window_options: |_, _| Default::default(),
+        build_window_options,
         node_runtime,
         session,
     })
@@ -142,14 +154,44 @@ pub extern "C" fn zed_aros_main() -> i32 {
     0
 }
 
+/// A minimal always-visible status-bar item (a fixed label). Doubles as a probe
+/// that the status bar renders at all, independent of CursorPosition's state.
+struct ArosMarker;
+
+impl gpui::Render for ArosMarker {
+    fn render(&mut self, _: &mut Window, _: &mut gpui::Context<Self>) -> impl gpui::IntoElement {
+        use gpui::{ParentElement, Styled};
+        gpui::div()
+            .px_2()
+            .child("Zed on AROS")
+            .text_color(gpui::white())
+    }
+}
+
+impl workspace::StatusItemView for ArosMarker {
+    fn set_active_pane_item(
+        &mut self,
+        _: Option<&dyn workspace::item::ItemHandle>,
+        _: &mut Window,
+        _: &mut gpui::Context<Self>,
+    ) {
+    }
+
+    fn hide_setting(&self, _: &App) -> Option<workspace::HideStatusItem> {
+        None
+    }
+}
+
 /// Populate the workspace status bar (called once the workspace is built).
 fn add_status_bar_items(
     workspace: &mut Workspace,
     window: &mut Window,
     cx: &mut gpui::Context<Workspace>,
 ) {
+    let marker = cx.new(|_| ArosMarker);
     let cursor_position = cx.new(|_| go_to_line::cursor_position::CursorPosition::new(workspace));
     workspace.status_bar().update(cx, |status_bar, cx| {
+        status_bar.add_left_item(marker, window, cx);
         status_bar.add_right_item(cursor_position, window, cx);
     });
 }
