@@ -110,6 +110,10 @@ pub extern "C" fn zed_aros_main() -> i32 {
         workspace::init(app_state.clone(), cx);
         go_to_line::init(cx);
 
+        // Map syntax-highlight captures to theme colors; without this the
+        // grammars load but every token renders in the default foreground.
+        app_state.languages.set_theme(theme::ActiveTheme::theme(cx).clone());
+
         // Zed's real macOS keymap; bindings for unregistered actions are skipped.
         let bindings = match KeymapFile::load(DEFAULT_KEYMAP, cx) {
             KeymapFileLoadResult::Success { key_bindings }
