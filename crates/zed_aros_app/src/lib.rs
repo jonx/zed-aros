@@ -9,6 +9,7 @@
 //! `zed_aros_main` from a small C shim (hosted/zed/zed_aros_main.c).
 
 mod getrandom_aros;
+mod lsp_adapter;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -144,6 +145,13 @@ fn register_languages(registry: &Arc<language::LanguageRegistry>) {
             }),
         );
     }
+
+    // Register a Rust language server that connects over TCP to the host bridge
+    // (rust-analyzer), so opening a .rs file gets real diagnostics/completions.
+    registry.register_lsp_adapter(
+        language::LanguageName::new_static("Rust"),
+        Arc::new(lsp_adapter::ArosRustLspAdapter),
+    );
 }
 
 /// Hidden async-reactor smoke test (`ZedAros --nettest`): connect to a host TCP

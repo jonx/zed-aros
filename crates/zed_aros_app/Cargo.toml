@@ -19,6 +19,7 @@ gpui.workspace = true
 gpui_platform.workspace = true
 editor.workspace = true
 language.workspace = true
+lsp.workspace = true
 multi_buffer.workspace = true
 settings.workspace = true
 theme.workspace = true
@@ -51,6 +52,8 @@ session = { workspace = true, features = ["test-support"] }
 log.workspace = true
 semver.workspace = true
 uuid.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
 # The hidden `--nettest` async smoke test (verifies the unified-fd shim +
 # reactor Phase B drive real sockets).
 async-io = "2.6"

@@ -512,6 +512,30 @@ impl LocalLspStore {
                 }
 
                 let code_action_kinds = adapter.code_action_kinds();
+                #[cfg(target_os = "aros")]
+                {
+                    // AROS can't spawn a local process, so the server is reached
+                    // over TCP to a host-side bridge that relays its stdio. The
+                    // bridge address defaults to the loopback the bsdsocket
+                    // bridge exposes; override with ZED_AROS_LSP_ADDR.
+                    let addr: std::net::SocketAddr = std::env::var("ZED_AROS_LSP_ADDR")
+                        .ok()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or_else(|| ([127, 0, 0, 1], 9257).into());
+                    return lsp::LanguageServer::new_tcp(
+                        addr,
+                        stderr_capture,
+                        server_id,
+                        server_name,
+                        binary,
+                        &worktree_abs_path,
+                        code_action_kinds,
+                        Some(pending_workspace_folders),
+                        cx,
+                    )
+                    .await;
+                }
+                #[cfg(not(target_os = "aros"))]
                 lsp::LanguageServer::new(
                     stderr_capture,
                     server_id,
