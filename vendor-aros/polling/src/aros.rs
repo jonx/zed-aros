@@ -16,11 +16,28 @@ use std::collections::HashMap;
 use std::io;
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::sync::{Condvar, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::{Event, PollMode};
 
 type RawFd = std::os::raw::c_int;
+
+// The reactor caps each WaitSelect to this so notify() latency is bounded (a
+// notify is seen at the next loop turn). Socket readiness itself is prompt --
+// WaitSelect returns as soon as a socket is ready, within the window.
+const POLL_INTERVAL_US: i64 = 50_000;
+
+unsafe extern "C" {
+    // WaitSelect-based socket readiness (aros_net_glue.c). Returns >=0 ready
+    // count / -1 error; fills `got` (bit0=readable, bit1=writable).
+    fn aros_np_waitselect(
+        n: std::os::raw::c_int,
+        fds: *const RawFd,
+        want: *const u8,
+        got: *mut u8,
+        timeout_us: i64,
+    ) -> std::os::raw::c_int;
+}
 
 /// Software reactor.
 #[derive(Debug)]
@@ -67,36 +84,90 @@ impl Poller {
         Ok(())
     }
 
-    /// Block until `notify` or `deadline`. Reports no fd events yet (Phase A).
+    /// Wait for socket readiness, `notify`, or `deadline` (Phase B). Registered
+    /// sockets are polled via bsdsocket `WaitSelect`; with none registered this
+    /// falls back to the condvar wait (timers/notify only).
     pub fn wait_deadline(
         &self,
         events: &mut Events,
         deadline: Option<Instant>,
     ) -> io::Result<()> {
         events.inner.clear();
-        let mut notified = self.notified.lock().unwrap();
         loop {
-            if *notified {
-                *notified = false;
+            // A pending notify wins immediately.
+            {
+                let mut notified = self.notified.lock().unwrap();
+                if *notified {
+                    *notified = false;
+                    return Ok(());
+                }
+            }
+            let now = Instant::now();
+            if let Some(dl) = deadline {
+                if now >= dl {
+                    return Ok(());
+                }
+            }
+
+            // This turn's timeout, capped so a notify is seen promptly.
+            let remaining_us = match deadline {
+                None => POLL_INTERVAL_US,
+                Some(dl) => (dl.saturating_duration_since(now).as_micros() as i64)
+                    .min(POLL_INTERVAL_US),
+            };
+
+            let snapshot: Vec<(RawFd, Event)> = {
+                let reg = self.registry.lock().unwrap();
+                reg.iter().map(|(&fd, &ev)| (fd, ev)).collect()
+            };
+
+            if snapshot.is_empty() {
+                // No sockets to poll: condvar wait (wakes at once on notify).
+                let notified = self.notified.lock().unwrap();
+                if *notified {
+                    continue;
+                }
+                let dur = Duration::from_micros(remaining_us.max(0) as u64);
+                let _ = self.signal.wait_timeout(notified, dur).unwrap();
+                continue;
+            }
+
+            let fds: Vec<RawFd> = snapshot.iter().map(|(fd, _)| *fd).collect();
+            let want: Vec<u8> = snapshot
+                .iter()
+                .map(|(_, ev)| (ev.readable as u8) | ((ev.writable as u8) << 1))
+                .collect();
+            let mut got = vec![0u8; snapshot.len()];
+            let r = unsafe {
+                aros_np_waitselect(
+                    fds.len() as std::os::raw::c_int,
+                    fds.as_ptr(),
+                    want.as_ptr(),
+                    got.as_mut_ptr(),
+                    remaining_us,
+                )
+            };
+            if r < 0 {
+                // WaitSelect error: brief back-off, then retry.
+                std::thread::sleep(Duration::from_millis(5));
+                continue;
+            }
+
+            for (i, (_, ev)) in snapshot.iter().enumerate() {
+                let g = got[i];
+                if g != 0 {
+                    events.inner.push(Event {
+                        key: ev.key,
+                        readable: g & 1 != 0,
+                        writable: g & 2 != 0,
+                        extra: EventExtra::empty(),
+                    });
+                }
+            }
+            if !events.inner.is_empty() {
                 return Ok(());
             }
-            match deadline {
-                None => {
-                    notified = self.signal.wait(notified).unwrap();
-                }
-                Some(dl) => {
-                    let now = Instant::now();
-                    if now >= dl {
-                        return Ok(());
-                    }
-                    let (guard, timeout) =
-                        self.signal.wait_timeout(notified, dl - now).unwrap();
-                    notified = guard;
-                    if timeout.timed_out() {
-                        return Ok(());
-                    }
-                }
-            }
+            // Timed out with nothing ready: loop (re-check notify + deadline).
         }
     }
 
