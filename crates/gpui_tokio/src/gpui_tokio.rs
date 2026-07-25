@@ -10,12 +10,18 @@ pub use tokio::task::JoinError;
 /// If you need more threads (or access to the runtime outside of GPUI), you can create the runtime
 /// yourself and pass a Handle to `init_from_handle`.
 pub fn init(cx: &mut App) {
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        // Since we now have two executors, let's try to keep our footprint small
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .expect("Failed to initialize Tokio");
+    let mut builder = tokio::runtime::Builder::new_multi_thread();
+    // Since we now have two executors, let's try to keep our footprint small
+    builder.worker_threads(2);
+    // AROS has no mio backend (mio falls back to its stub selector and aborts),
+    // so the I/O driver cannot start there. The timer driver works, and the
+    // async-io/smol stack -- which drives sockets through bsdsocket WaitSelect
+    // -- is what networking uses on that platform.
+    #[cfg(target_os = "aros")]
+    builder.enable_time();
+    #[cfg(not(target_os = "aros"))]
+    builder.enable_all();
+    let runtime = builder.build().expect("Failed to initialize Tokio");
 
     let handle = runtime.handle().clone();
     cx.set_global(GlobalTokio {

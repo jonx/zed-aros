@@ -26,6 +26,19 @@ pub(crate) use zed_main::{
     STARTUP_TIME, handle_open_request, restore_or_create_workspace, stdout_is_a_pty, zed,
 };
 
+// Force the linker to keep `vim_mode_setting`'s archive member. Everything that
+// crate exports is either generic or a trait impl, so all of it is codegen'd
+// into the crates that *use* it and nothing references the member itself -- the
+// linker drops it, and with it the constructor that registers its settings
+// types, which then panic as "unregistered setting type" at startup. Anchoring
+// two non-generic functions keeps the member (and its registrations) alive.
+#[cfg(target_os = "aros")]
+#[used]
+static _KEEP_VIM_MODE_SETTINGS: [fn(&gpui::App) -> bool; 2] = [
+    vim_mode_setting::VimModeSetting::is_enabled,
+    vim_mode_setting::HelixModeSetting::is_enabled,
+];
+
 /// Entry point called by the AROS C shim (see hosted/zed/zed_main_aros.c).
 #[cfg(target_os = "aros")]
 #[unsafe(no_mangle)]

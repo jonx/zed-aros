@@ -25,6 +25,8 @@ use std::os::fd::{AsFd, AsRawFd};
 use std::os::unix::ffi::OsStrExt;
 #[cfg(target_os = "aros")]
 use std::os::aros::ffi::OsStrExt;
+#[cfg(target_os = "aros")]
+use std::os::aros::fs::MetadataExt;
 
 #[cfg(unix)]
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
@@ -1016,7 +1018,7 @@ impl Fs for RealFs {
         #[cfg(unix)]
         let inode = metadata.ino();
         #[cfg(target_os = "aros")]
-        let inode = 0u64;
+        let inode = metadata.ino();
 
         #[cfg(windows)]
         let inode = file_id(path).await?;

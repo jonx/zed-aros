@@ -2291,18 +2291,35 @@ pub fn load_default_keymap(cx: &mut App) {
         return;
     }
 
-    cx.bind_keys(
-        KeymapFile::load_asset(DEFAULT_KEYMAP_PATH, Some(KeybindSource::Default), cx).unwrap(),
-    );
-
-    if let Some(asset_path) = base_keymap.asset_path() {
-        cx.bind_keys(KeymapFile::load_asset(asset_path, Some(KeybindSource::Base), cx).unwrap());
+    // On AROS several subsystems are not built (agent, extensions, collab, the
+    // settings editor), so the bundled keymaps reference actions that do not
+    // exist there. Bind what resolves instead of treating the rest as fatal.
+    #[cfg(target_os = "aros")]
+    {
+        let _ = base_keymap;
+        for path in [DEFAULT_KEYMAP_PATH, VIM_KEYMAP_PATH] {
+            match KeymapFile::load_asset_allow_partial_failure(path, cx) {
+                Ok(bindings) => cx.bind_keys(bindings),
+                Err(error) => log::error!("Failed to load keymap {path}: {error}"),
+            }
+        }
     }
 
-    if VimModeSetting::get_global(cx).0 || vim_mode_setting::HelixModeSetting::get_global(cx).0 {
+    #[cfg(not(target_os = "aros"))]
+    {
         cx.bind_keys(
-            KeymapFile::load_asset(VIM_KEYMAP_PATH, Some(KeybindSource::Vim), cx).unwrap(),
+            KeymapFile::load_asset(DEFAULT_KEYMAP_PATH, Some(KeybindSource::Default), cx).unwrap(),
         );
+
+        if let Some(asset_path) = base_keymap.asset_path() {
+            cx.bind_keys(KeymapFile::load_asset(asset_path, Some(KeybindSource::Base), cx).unwrap());
+        }
+
+        if VimModeSetting::get_global(cx).0 || vim_mode_setting::HelixModeSetting::get_global(cx).0 {
+            cx.bind_keys(
+                KeymapFile::load_asset(VIM_KEYMAP_PATH, Some(KeybindSource::Vim), cx).unwrap(),
+            );
+        }
     }
 }
 

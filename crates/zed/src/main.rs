@@ -48,6 +48,7 @@ use gpui::{
 };
 use gpui_platform;
 
+#[cfg(not(target_os = "aros"))]
 use gpui_tokio::Tokio;
 use language::LanguageRegistry;
 use onboarding::{FIRST_OPEN, show_onboarding_view};
@@ -55,6 +56,7 @@ use project_panel::ProjectPanel;
 #[cfg(not(target_os = "aros"))]
 use prompt_store::PromptBuilder;
 use remote::RemoteConnectionOptions;
+#[cfg(not(target_os = "aros"))]
 use reqwest_client::ReqwestClient;
 
 use assets::Assets;
@@ -522,13 +524,24 @@ pub fn main() {
             std::env::consts::ARCH
         );
         let proxy_url = ProxySettings::get_global(cx).proxy_url();
-        let http = {
-            let _guard = Tokio::handle(cx).enter();
+        // The reqwest/hyper stack drives sockets through tokio's I/O driver,
+        // which needs a mio poll backend AROS does not provide; every request
+        // would panic the worker thread it runs on.
+        #[cfg(target_os = "aros")]
+        {
+            let _ = (&proxy_url, &user_agent);
+            cx.set_http_client(Arc::new(http_client::BlockedHttpClient::new()));
+        }
+        #[cfg(not(target_os = "aros"))]
+        {
+            let http = {
+                let _guard = Tokio::handle(cx).enter();
 
-            ReqwestClient::proxy_and_user_agent(proxy_url, &user_agent)
-                .expect("could not start HTTP client")
-        };
-        cx.set_http_client(Arc::new(http));
+                ReqwestClient::proxy_and_user_agent(proxy_url, &user_agent)
+                    .expect("could not start HTTP client")
+            };
+            cx.set_http_client(Arc::new(http));
+        }
 
         <dyn Fs>::set_global(fs.clone(), cx);
 

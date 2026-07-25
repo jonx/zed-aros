@@ -17212,6 +17212,7 @@ version = "0.0.0"
 dependencies = [
  "futures-lite 2.6.1",
  "smol",
+ "tokio",
 ]
 
 [[package]]
