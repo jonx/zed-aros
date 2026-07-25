@@ -1,0 +1,19 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[profile.release]
+# Enable all optimizations
+opt-level = 3
+# Enable full link-time-optimizations
+lto = true
+codegen-units = 1
+# Enable full debug info for optimized builds.
+debug = "full"
+# Split debuginfo into its own file to reduce binary size.
+split-debuginfo = "packed"

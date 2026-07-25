@@ -59,7 +59,10 @@ use project::{
     },
     project_settings::{GitPathStyle, ProjectSettings},
 };
+#[cfg(not(target_os = "aros"))]
 use prompt_store::RULES_FILE_NAMES;
+#[cfg(target_os = "aros")]
+const RULES_FILE_NAMES: [&str; 0] = [];
 use proto::RpcError;
 use serde::{Deserialize, Serialize};
 use settings::{Settings, SettingsStore, StatusStyle, update_settings_file};

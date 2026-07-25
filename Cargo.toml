@@ -258,6 +258,7 @@ members = [
     "tooling/xtask",
 ]
 default-members = ["crates/zed"]
+exclude = ["vendor-aros/python-environment-tools"]
 
 [workspace.package]
 publish = false
@@ -996,6 +997,9 @@ is_executable = { path = "vendor-aros/is_executable" }
 # rustls defaults to the aws-lc-rs provider, whose C library does not build
 # for AROS; this copy defaults to `ring` instead. Inert elsewhere.
 rustls = { path = "vendor-aros/rustls" }
+# console picks a unix/windows/wasm terminal backend; AROS is none of them,
+# so route it to the minimal (wasm) backend. Inert elsewhere.
+console = { path = "vendor-aros/console" }
 rustls-platform-verifier = { path = "vendor-aros/rustls-platform-verifier" }
 rustls-native-certs = { path = "vendor-aros/rustls-native-certs" }
 which = { path = "vendor-aros/which" }
@@ -1171,7 +1175,33 @@ trash = { path = "vendor-aros/trash-rs" }
 # AROS tty stub (no pseudo-terminal); see vendor-aros/alacritty/alacritty_terminal/src/tty/aros.rs
 alacritty_terminal = { path = "vendor-aros/alacritty/alacritty_terminal" }
 
-# pet-fs has cfg(unix)/cfg(windows)-only function bodies, so two of its
-# functions return () on AROS. This copy adds the missing arm.
+# Several pet crates have cfg(unix)/cfg(windows)-only item bodies, so on AROS
+# (which is neither) functions lose their bodies and constants disappear. This
+# copy widens the unix arms to cover AROS. Inert on every other target.
 [patch."https://github.com/microsoft/python-environment-tools.git"]
-pet-fs = { path = "vendor-aros/pet-fs" }
+pet = { path = "vendor-aros/python-environment-tools/crates/pet" }
+pet-conda = { path = "vendor-aros/python-environment-tools/crates/pet-conda" }
+pet-core = { path = "vendor-aros/python-environment-tools/crates/pet-core" }
+pet-env-var-path = { path = "vendor-aros/python-environment-tools/crates/pet-env-var-path" }
+pet-fs = { path = "vendor-aros/python-environment-tools/crates/pet-fs" }
+pet-global-virtualenvs = { path = "vendor-aros/python-environment-tools/crates/pet-global-virtualenvs" }
+pet-homebrew = { path = "vendor-aros/python-environment-tools/crates/pet-homebrew" }
+pet-jsonrpc = { path = "vendor-aros/python-environment-tools/crates/pet-jsonrpc" }
+pet-linux-global-python = { path = "vendor-aros/python-environment-tools/crates/pet-linux-global-python" }
+pet-mac-commandlinetools = { path = "vendor-aros/python-environment-tools/crates/pet-mac-commandlinetools" }
+pet-mac-python-org = { path = "vendor-aros/python-environment-tools/crates/pet-mac-python-org" }
+pet-mac-xcode = { path = "vendor-aros/python-environment-tools/crates/pet-mac-xcode" }
+pet-pipenv = { path = "vendor-aros/python-environment-tools/crates/pet-pipenv" }
+pet-pixi = { path = "vendor-aros/python-environment-tools/crates/pet-pixi" }
+pet-poetry = { path = "vendor-aros/python-environment-tools/crates/pet-poetry" }
+pet-pyenv = { path = "vendor-aros/python-environment-tools/crates/pet-pyenv" }
+pet-python-utils = { path = "vendor-aros/python-environment-tools/crates/pet-python-utils" }
+pet-reporter = { path = "vendor-aros/python-environment-tools/crates/pet-reporter" }
+pet-telemetry = { path = "vendor-aros/python-environment-tools/crates/pet-telemetry" }
+pet-uv = { path = "vendor-aros/python-environment-tools/crates/pet-uv" }
+pet-venv = { path = "vendor-aros/python-environment-tools/crates/pet-venv" }
+pet-virtualenv = { path = "vendor-aros/python-environment-tools/crates/pet-virtualenv" }
+pet-virtualenvwrapper = { path = "vendor-aros/python-environment-tools/crates/pet-virtualenvwrapper" }
+pet-windows-registry = { path = "vendor-aros/python-environment-tools/crates/pet-windows-registry" }
+pet-windows-store = { path = "vendor-aros/python-environment-tools/crates/pet-windows-store" }
+pet-winpython = { path = "vendor-aros/python-environment-tools/crates/pet-winpython" }

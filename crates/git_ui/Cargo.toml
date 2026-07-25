@@ -47,7 +47,6 @@ notifications.workspace = true
 panel.workspace = true
 picker.workspace = true
 project.workspace = true
-prompt_store.workspace = true
 proto.workspace = true
 rand.workspace = true
 release_channel.workspace = true
@@ -101,3 +100,7 @@ remote_connection = { workspace = true, features = ["test-support"] }
 
 [package.metadata.cargo-machete]
 ignored = ["tracing"]
+
+# prompt_store pulls heed/LMDB, which is memory-mapped and cannot build for AROS.
+[target.'cfg(not(target_os = "aros"))'.dependencies]
+prompt_store.workspace = true

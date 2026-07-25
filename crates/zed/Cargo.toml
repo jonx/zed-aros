@@ -71,14 +71,12 @@ audio.workspace = true
 auto_update.workspace = true
 auto_update_ui.workspace = true
 breadcrumbs.workspace = true
-call.workspace = true
 chrono.workspace = true
 channel.workspace = true
 clap.workspace = true
 cli.workspace = true
 client.workspace = true
 codestral.workspace = true
-collab_ui.workspace = true
 collections.workspace = true
 command_palette.workspace = true
 component.workspace = true
@@ -211,6 +209,8 @@ zlog_settings.workspace = true
 # and AROS has no VM mmap) and the extension stack needs a wasm runtime.
 # Everything else -- workspace, panels, terminal, LSP -- builds without them.
 [target.'cfg(not(target_os = "aros"))'.dependencies]
+collab_ui.workspace = true
+call.workspace = true
 settings_ui.workspace = true
 language_models.workspace = true
 sidebar.workspace = true
@@ -259,7 +259,6 @@ image.workspace = true
 pkg-config = "0.3.22"
 
 [dev-dependencies]
-call = { workspace = true, features = ["test-support"] }
 editor = { workspace = true, features = ["test-support"] }
 gpui = { workspace = true, features = ["input-latency-histogram", "test-support"] }
 image_viewer = { workspace = true, features = ["test-support"] }
@@ -315,4 +314,5 @@ ignored = ["profiling", "zstd", "tracing"]
 # The agent stack is not built on AROS (see the dependency gate above), so its
 # test-support dependency must be excluded there too.
 [target.'cfg(not(target_os = "aros"))'.dev-dependencies]
+call = { workspace = true, features = ["test-support"] }
 agent_ui = { workspace = true, features = ["test-support"] }

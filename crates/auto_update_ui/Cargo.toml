@@ -21,7 +21,6 @@ editor.workspace = true
 gpui.workspace = true
 markdown_preview.workspace = true
 notifications.workspace = true
-prompt_store.workspace = true
 release_channel.workspace = true
 semver.workspace = true
 serde.workspace = true
@@ -32,3 +31,7 @@ ui.workspace = true
 util.workspace = true
 workspace.workspace = true
 zed_actions.workspace = true
+
+# prompt_store pulls heed/LMDB, which is memory-mapped and cannot build for AROS.
+[target.'cfg(not(target_os = "aros"))'.dependencies]
+prompt_store.workspace = true

@@ -1,0 +1,63 @@
+[package]
+name = "pet"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+pet-windows-store = { path = "../pet-windows-store" }
+pet-windows-registry = { path = "../pet-windows-registry" }
+pet-winpython = { path = "../pet-winpython" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+msvc_spectre_libs = { version = "0.1.1", features = ["error"] }
+
+[target.'cfg(target_os = "windows")'.build-dependencies]
+winresource = "0.1"
+
+[target.'cfg(unix)'.dependencies]
+pet-homebrew = { path = "../pet-homebrew" }
+
+[dependencies]
+pet-core = { path = "../pet-core" }
+pet-conda = { path = "../pet-conda" }
+pet-pixi = { path = "../pet-pixi" }
+pet-jsonrpc = { path = "../pet-jsonrpc" }
+pet-fs = { path = "../pet-fs" }
+pet-pyenv = { path = "../pet-pyenv" }
+pet-poetry = { path = "../pet-poetry" }
+pet-reporter = { path = "../pet-reporter" }
+pet-virtualenvwrapper = { path = "../pet-virtualenvwrapper" }
+pet-python-utils = { path = "../pet-python-utils" }
+pet-env-var-path = { path = "../pet-env-var-path" }
+pet-mac-commandlinetools = { path = "../pet-mac-commandlinetools" }
+pet-linux-global-python = { path = "../pet-linux-global-python" }
+pet-mac-xcode = { path = "../pet-mac-xcode" }
+pet-mac-python-org = { path = "../pet-mac-python-org" }
+pet-venv = { path = "../pet-venv" }
+pet-virtualenv = { path = "../pet-virtualenv" }
+pet-pipenv = { path = "../pet-pipenv" }
+pet-telemetry = { path = "../pet-telemetry" }
+pet-global-virtualenvs = { path = "../pet-global-virtualenvs" }
+pet-uv = { path = "../pet-uv" }
+log = "0.4.21"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+clap = { version = "4.5.4", features = ["derive", "cargo", "env"] }
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json = "1.0.93"
+env_logger = "0.10.2"
+lazy_static = "1.4.0"
+
+[dev-dependencies]
+regex = "1.10.4"
+tempfile = "3.10"
+
+[features]
+ci = []
+ci-jupyter-container = []
+ci-homebrew-container = []
+ci-poetry-global = []
+ci-poetry-project = []
+ci-poetry-custom = []
+ci-perf = []

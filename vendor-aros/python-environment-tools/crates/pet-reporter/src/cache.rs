@@ -1,0 +1,68 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT License.
+
+use crate::environment::get_environment_key;
+use pet_core::{manager::EnvManager, python_environment::PythonEnvironment, reporter::Reporter};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
+
+/// Poorly named, needs to be renamed,
+/// The purpose of this reporter was to act as a cache, but since then
+/// the requirements of caching have changed and this is no longer a cache.
+/// This is merely a decorator class that ensures we do not report the same env/manager more than once.
+pub struct CacheReporter {
+    reporter: Arc<dyn Reporter>,
+    reported_managers: Arc<RwLock<HashMap<PathBuf, EnvManager>>>,
+    reported_environments: Arc<RwLock<HashMap<PathBuf, PythonEnvironment>>>,
+}
+
+impl CacheReporter {
+    pub fn new(reporter: Arc<dyn Reporter>) -> Self {
+        Self {
+            reporter,
+            reported_managers: Arc::new(RwLock::new(HashMap::new())),
+            reported_environments: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+}
+impl Reporter for CacheReporter {
+    fn report_telemetry(&self, event: &pet_core::telemetry::TelemetryEvent) {
+        self.reporter.report_telemetry(event);
+    }
+    fn report_manager(&self, manager: &EnvManager) {
+        // First check with read lock
+        {
+            let reported_managers = self.reported_managers.read().unwrap();
+            if reported_managers.contains_key(&manager.executable) {
+                return;
+            }
+        }
+        // Insert with write lock
+        let mut reported_managers = self.reported_managers.write().unwrap();
+        if !reported_managers.contains_key(&manager.executable) {
+            reported_managers.insert(manager.executable.clone(), manager.clone());
+            self.reporter.report_manager(manager);
+        }
+    }
+
+    fn report_environment(&self, env: &PythonEnvironment) {
+        if let Some(key) = get_environment_key(env) {
+            // First check with read lock
+            {
+                let reported_environments = self.reported_environments.read().unwrap();
+                if reported_environments.contains_key(&key) {
+                    return;
+                }
+            }
+            // Insert with write lock
+            let mut reported_environments = self.reported_environments.write().unwrap();
+            if !reported_environments.contains_key(&key) {
+                reported_environments.insert(key.clone(), env.clone());
+                self.reporter.report_environment(env);
+            }
+        }
+    }
+}

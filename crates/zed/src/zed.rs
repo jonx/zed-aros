@@ -754,6 +754,7 @@ fn initialize_panels(window: &mut Window, cx: &mut Context<Workspace>) -> Task<a
         let outline_panel = OutlinePanel::load(workspace_handle.clone(), cx.clone());
         let terminal_panel = TerminalPanel::load(workspace_handle.clone(), cx.clone());
         let git_panel = GitPanel::load(workspace_handle.clone(), cx.clone());
+        #[cfg(not(target_os = "aros"))]
         let channels_panel =
             collab_ui::collab_panel::CollabPanel::load(workspace_handle.clone(), cx.clone());
         let debug_panel = DebugPanel::load(workspace_handle.clone(), cx);
@@ -778,6 +779,7 @@ fn initialize_panels(window: &mut Window, cx: &mut Context<Workspace>) -> Task<a
             add_panel_when_ready(outline_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(terminal_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(git_panel, workspace_handle.clone(), cx.clone()),
+            #[cfg(not(target_os = "aros"))]
             add_panel_when_ready(channels_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(debug_panel, workspace_handle.clone(), cx.clone()),
             initialize_agent_panel(workspace_handle, cx.clone()).map(|r| r.log_err()),
@@ -1193,14 +1195,6 @@ fn register_actions(
         )
         .register_action(
             |workspace: &mut Workspace,
-             _: &collab_ui::collab_panel::ToggleFocus,
-             window: &mut Window,
-             cx: &mut Context<Workspace>| {
-                workspace.toggle_panel_focus::<collab_ui::collab_panel::CollabPanel>(window, cx);
-            },
-        )
-        .register_action(
-            |workspace: &mut Workspace,
              _: &terminal_panel::ToggleFocus,
              window: &mut Window,
              cx: &mut Context<Workspace>| {
@@ -1311,6 +1305,18 @@ fn register_actions(
 
     #[cfg(not(target_os = "windows"))]
     workspace.register_action(install_cli);
+
+    // Registered separately (rather than in the chain above) so it can be left
+    // out on AROS, which does not build the collaboration stack.
+    #[cfg(not(target_os = "aros"))]
+    workspace.register_action(
+        |workspace: &mut Workspace,
+         _: &collab_ui::collab_panel::ToggleFocus,
+         window: &mut Window,
+         cx: &mut Context<Workspace>| {
+            workspace.toggle_panel_focus::<collab_ui::collab_panel::CollabPanel>(window, cx);
+        },
+    );
 
     if workspace.project().read(cx).is_via_remote_server() {
         workspace.register_action({

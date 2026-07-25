@@ -43,7 +43,9 @@ smallvec.workspace = true
 ui.workspace = true
 util.workspace = true
 
-[target.'cfg(not(any(all(target_os = "windows", target_env = "gnu"), target_os = "freebsd")))'.dependencies]
+# AROS has no WebRTC (the C++ SDK builds through cxx); it uses mock_client, the
+# same path windows-gnu and freebsd already take.
+[target.'cfg(not(any(all(target_os = "windows", target_env = "gnu"), target_os = "freebsd", target_os = "aros")))'.dependencies]
 libwebrtc.workspace = true
 livekit.workspace = true
 
