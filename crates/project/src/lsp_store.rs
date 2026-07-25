@@ -494,6 +494,19 @@ impl LocalLspStore {
             let lsp_store = self.weak.clone();
             let pending_workspace_folders = pending_workspace_folders.clone();
             async move |cx| {
+                // On AROS the binary is never launched: the server runs on the
+                // host and is reached over TCP, so a failure to find or fetch a
+                // local one must not stop the connection.
+                #[cfg(target_os = "aros")]
+                let binary = binary.await.unwrap_or_else(|err| {
+                    log::info!("no local {server_name} binary ({err:#}); using the host bridge");
+                    ::lsp::LanguageServerBinary {
+                        path: std::path::PathBuf::from("aros-host-bridge"),
+                        arguments: Vec::new(),
+                        env: None,
+                    }
+                });
+                #[cfg(not(target_os = "aros"))]
                 let binary = binary.await?;
                 #[cfg(any(test, feature = "test-support"))]
                 if let Some(server) = lsp_store
