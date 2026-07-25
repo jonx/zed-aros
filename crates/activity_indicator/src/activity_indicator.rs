@@ -1,5 +1,6 @@
 use auto_update::DismissMessage;
 use editor::Editor;
+#[cfg(not(target_os = "aros"))]
 use extension_host::{ExtensionOperation, ExtensionStore};
 use futures::StreamExt;
 use gpui::{
@@ -607,6 +608,7 @@ impl ActivityIndicator {
         }
 
         // Show any extension installation info.
+        #[cfg(not(target_os = "aros"))]
         if let Some(extension_store) =
             ExtensionStore::try_global(cx).map(|extension_store| extension_store.read(cx))
             && let Some((extension_id, operation)) =

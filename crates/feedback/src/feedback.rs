@@ -1,4 +1,5 @@
 use client::telemetry;
+#[cfg(not(target_os = "aros"))]
 use extension_host::ExtensionStore;
 use gpui::{App, ClipboardItem, PromptLevel, actions};
 use system_specs::{CopySystemSpecsIntoClipboard, SystemSpecs};
@@ -115,6 +116,13 @@ pub fn init(cx: &mut App) {
     .detach();
 }
 
+/// No extensions exist on AROS (no wasm runtime), so there is nothing to list.
+#[cfg(target_os = "aros")]
+fn format_installed_extensions_for_clipboard(_cx: &mut App) -> String {
+    String::new()
+}
+
+#[cfg(not(target_os = "aros"))]
 fn format_installed_extensions_for_clipboard(cx: &mut App) -> String {
     let store = ExtensionStore::global(cx);
     let store = store.read(cx);

@@ -29,6 +29,12 @@ use std::path::MAIN_SEPARATOR;
 /// # Related
 /// - `norm_case()` - Full path normalization (includes trailing separator stripping on Windows)
 pub fn strip_trailing_separator<P: AsRef<Path>>(path: P) -> PathBuf {
+    // AROS is neither `unix` nor `windows`, so without this arm the function
+    // has no body on that target and fails to compile.
+    #[cfg(target_os = "aros")]
+    return path.as_ref().to_path_buf();
+
+    #[allow(unreachable_code)]
     let path_str = path.as_ref().to_string_lossy();
 
     #[cfg(windows)]
@@ -104,7 +110,7 @@ pub fn norm_case<P: AsRef<Path>>(path: P) -> PathBuf {
     // Even readlink does the same thing
     // Running readlink for a path thats not a symlink ends up returning relative paths for some reason.
     // A better solution is to first check if a path is a symlink and then resolve it.
-    #[cfg(unix)]
+    #[cfg(any(unix, target_os = "aros"))]
     return path.as_ref().to_path_buf();
 
     #[cfg(windows)]

@@ -27,4 +27,8 @@ thiserror.workspace = true
 util.workspace = true
 
 [target.'cfg(not(any(all(target_os = "windows", target_env = "gnu"), target_os = "freebsd")))'.dependencies]
+
+# libwebrtc brings in the C++ WebRTC SDK (via cxx), which does not build for
+# AROS; the echo canceller falls back to its stub implementation there.
+[target.'cfg(not(target_os = "aros"))'.dependencies]
 libwebrtc.workspace = true

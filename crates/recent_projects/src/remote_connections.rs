@@ -6,6 +6,7 @@ use std::{
 use anyhow::{Context as _, Result};
 use askpass::EncryptedPassword;
 use editor::Editor;
+#[cfg(not(target_os = "aros"))]
 use extension_host::ExtensionStore;
 use futures::{FutureExt as _, channel::oneshot, select};
 use gpui::{AppContext, AsyncApp, PromptLevel, WindowHandle};
@@ -427,6 +428,7 @@ pub async fn open_remote_project(
         .update(cx, |multi_workspace: &mut MultiWorkspace, _, cx| {
             let workspace = multi_workspace.workspace().clone();
             workspace.update(cx, |workspace, cx| {
+                #[cfg(not(target_os = "aros"))]
                 if let Some(client) = workspace.project().read(cx).remote_client() {
                     if let Some(extension_store) = ExtensionStore::try_global(cx) {
                         extension_store

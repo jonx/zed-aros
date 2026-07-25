@@ -993,6 +993,9 @@ mio = { path = "vendor-aros/mio" }
 # aros (add aros to the rand.rs backend cfg) so SecureRandom is impl'd for rustls.
 ring = { path = "vendor-aros/ring" }
 is_executable = { path = "vendor-aros/is_executable" }
+# rustls defaults to the aws-lc-rs provider, whose C library does not build
+# for AROS; this copy defaults to `ring` instead. Inert elsewhere.
+rustls = { path = "vendor-aros/rustls" }
 rustls-platform-verifier = { path = "vendor-aros/rustls-platform-verifier" }
 rustls-native-certs = { path = "vendor-aros/rustls-native-certs" }
 which = { path = "vendor-aros/which" }
@@ -1167,3 +1170,8 @@ trash = { path = "vendor-aros/trash-rs" }
 [patch."https://github.com/zed-industries/alacritty"]
 # AROS tty stub (no pseudo-terminal); see vendor-aros/alacritty/alacritty_terminal/src/tty/aros.rs
 alacritty_terminal = { path = "vendor-aros/alacritty/alacritty_terminal" }
+
+# pet-fs has cfg(unix)/cfg(windows)-only function bodies, so two of its
+# functions return () on AROS. This copy adds the missing arm.
+[patch."https://github.com/microsoft/python-environment-tools.git"]
+pet-fs = { path = "vendor-aros/pet-fs" }

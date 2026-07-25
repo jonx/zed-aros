@@ -11,3 +11,6 @@ windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem", "Win32
 [dependencies]
 glob = "0.3.1"
 log = "0.4.21"
+
+# Standalone copy: not a member of the upstream workspace.
+[workspace]
