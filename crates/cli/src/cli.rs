@@ -2,10 +2,12 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use collections::HashMap;
+#[cfg(not(target_os = "aros"))]
 pub use ipc_channel::ipc;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
+#[cfg(not(target_os = "aros"))]
 pub struct IpcHandshake {
     pub requests: ipc::IpcSender<CliRequest>,
     pub responses: ipc::IpcReceiver<CliResponse>,
@@ -99,6 +101,7 @@ pub trait CliResponseSink: Send + 'static {
     fn send(&self, response: CliResponse) -> Result<()>;
 }
 
+#[cfg(not(target_os = "aros"))]
 impl CliResponseSink for ipc::IpcSender<CliResponse> {
     fn send(&self, response: CliResponse) -> Result<()> {
         ipc::IpcSender::send(self, response).map_err(|error| anyhow::anyhow!("{error}"))

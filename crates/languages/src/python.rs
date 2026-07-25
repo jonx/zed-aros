@@ -271,6 +271,14 @@ impl TyLspAdapter {
     const ARCH_SERVER_NAME: &str = "unknown-linux-gnu";
 }
 
+// AROS reaches language servers through a host bridge rather than downloading
+// a release; the constants still have to exist for the adapter to compile.
+#[cfg(target_os = "aros")]
+impl TyLspAdapter {
+    const GITHUB_ASSET_KIND: AssetKind = AssetKind::TarGz;
+    const ARCH_SERVER_NAME: &str = "unknown-aros";
+}
+
 #[cfg(target_os = "freebsd")]
 impl TyLspAdapter {
     const GITHUB_ASSET_KIND: AssetKind = AssetKind::TarGz;
@@ -2447,6 +2455,14 @@ impl RuffLspAdapter {
 impl RuffLspAdapter {
     const GITHUB_ASSET_KIND: AssetKind = AssetKind::TarGz;
     const ARCH_SERVER_NAME: &str = "unknown-linux-gnu";
+}
+
+// AROS reaches language servers through a host bridge rather than downloading
+// a release; the constants still have to exist for the adapter to compile.
+#[cfg(target_os = "aros")]
+impl RuffLspAdapter {
+    const GITHUB_ASSET_KIND: AssetKind = AssetKind::TarGz;
+    const ARCH_SERVER_NAME: &str = "unknown-aros";
 }
 
 #[cfg(target_os = "freebsd")]

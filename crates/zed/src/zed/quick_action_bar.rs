@@ -1,6 +1,7 @@
 mod preview;
 mod repl_menu;
 
+#[cfg(not(target_os = "aros"))]
 use agent_settings::AgentSettings;
 use editor::actions::{
     AddSelectionAbove, AddSelectionBelow, CodeActionSource, DuplicateLineDown, GoToDiagnostic,
@@ -48,16 +49,26 @@ impl QuickActionBar {
         workspace: &Workspace,
         cx: &mut Context<Self>,
     ) -> Self {
+        #[cfg(target_os = "aros")]
+        let (mut was_agent_enabled, mut was_agent_button) = (false, false);
+        #[cfg(not(target_os = "aros"))]
         let mut was_agent_enabled = AgentSettings::get_global(cx).enabled(cx);
+        #[cfg(not(target_os = "aros"))]
         let mut was_agent_button = AgentSettings::get_global(cx).button;
 
         let ai_settings_subscription = cx.observe_global::<SettingsStore>(move |_, cx| {
+            #[cfg(target_os = "aros")]
+            let (is_agent_enabled, agent_button) = (false, false);
+            #[cfg(not(target_os = "aros"))]
             let agent_settings = AgentSettings::get_global(cx);
+            #[cfg(not(target_os = "aros"))]
             let is_agent_enabled = agent_settings.enabled(cx);
+            #[cfg(not(target_os = "aros"))]
+            let agent_button = agent_settings.button;
 
-            if was_agent_enabled != is_agent_enabled || was_agent_button != agent_settings.button {
+            if was_agent_enabled != is_agent_enabled || was_agent_button != agent_button {
                 was_agent_enabled = is_agent_enabled;
-                was_agent_button = agent_settings.button;
+                was_agent_button = agent_button;
                 cx.notify();
             }
         });
@@ -680,7 +691,17 @@ impl Render for QuickActionBar {
             .children(self.render_preview_button(self.workspace.clone(), cx))
             .children(search_button)
             .when(
-                AgentSettings::get_global(cx).enabled(cx) && AgentSettings::get_global(cx).button,
+                {
+                    #[cfg(target_os = "aros")]
+                    {
+                        false
+                    }
+                    #[cfg(not(target_os = "aros"))]
+                    {
+                        AgentSettings::get_global(cx).enabled(cx)
+                            && AgentSettings::get_global(cx).button
+                    }
+                },
                 |bar| bar.child(assistant_button),
             )
             .children(code_actions_dropdown)

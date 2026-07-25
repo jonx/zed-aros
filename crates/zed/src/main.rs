@@ -16,6 +16,7 @@ const _: () = assert!(
 
 #[cfg(not(target_os = "aros"))]
 use agent::{SharedThread, ThreadStore};
+#[cfg(not(target_os = "aros"))]
 use agent_client_protocol::schema as acp;
 #[cfg(not(target_os = "aros"))]
 use agent_ui::AgentPanel;
@@ -377,6 +378,12 @@ fn main() {
             use zed::mac_only_instance::*;
             ensure_only_instance() != IsOnlyInstance::Yes
         }
+
+        // AROS has no cross-process instance handshake; always the only one.
+        #[cfg(target_os = "aros")]
+        {
+            false
+        }
     };
     if failed_single_instance_check {
         println!("zed is already running");
@@ -715,13 +722,14 @@ fn main() {
         web_search_providers::init(app_state.client.clone(), app_state.user_store.clone(), cx);
         snippet_provider::init(cx);
         edit_prediction_registry::init(app_state.client.clone(), app_state.user_store.clone(), cx);
+        #[cfg(not(target_os = "aros"))]
         let prompt_builder = PromptBuilder::load(app_state.fs.clone(), stdout_is_a_pty(), cx);
         project::AgentRegistryStore::init_global(
             cx,
             app_state.fs.clone(),
             app_state.client.http_client(),
         );
-#[cfg(not(target_os = "aros"))]
+        #[cfg(not(target_os = "aros"))]
         agent_ui::init(
             app_state.fs.clone(),
             prompt_builder,
@@ -1027,6 +1035,7 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
                 })
                 .detach_and_log_err(cx);
             }
+            #[cfg(not(target_os = "aros"))]
             OpenRequestKind::AgentPanel {
                 external_source_prompt,
             } => {
@@ -1064,6 +1073,7 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
                 })
                 .detach_and_log_err(cx);
             }
+            #[cfg(not(target_os = "aros"))]
             OpenRequestKind::SharedAgentThread { session_id } => {
                 cx.spawn(async move |cx| {
                     let multi_workspace =
@@ -1427,21 +1437,28 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
 
                 let workspace = workspace_window.read_with(cx, |mw, _| mw.workspace().clone())?;
 
-                let mut promises = Vec::new();
+                // Channel notes belong to the collaboration stack, which is not
+                // built on AROS.
                 #[cfg(not(target_os = "aros"))]
-                for (channel_id, heading) in request.open_channel_notes {
-                    promises.push(cx.update_window(workspace_window.into(), |_, window, cx| {
-                        ChannelView::open(
-                            client::ChannelId(channel_id),
-                            heading,
-                            workspace.clone(),
-                            window,
-                            cx,
-                        )
-                        .log_err()
-                    })?)
+                {
+                    let mut promises = Vec::new();
+                    for (channel_id, heading) in request.open_channel_notes {
+                        promises.push(cx.update_window(
+                            workspace_window.into(),
+                            |_, window, cx| {
+                                ChannelView::open(
+                                    client::ChannelId(channel_id),
+                                    heading,
+                                    workspace.clone(),
+                                    window,
+                                    cx,
+                                )
+                                .log_err()
+                            },
+                        )?)
+                    }
+                    future::join_all(promises).await;
                 }
-                future::join_all(promises).await;
                 anyhow::Ok(())
             })
             .await;

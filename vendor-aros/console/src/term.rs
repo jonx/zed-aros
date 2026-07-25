@@ -119,7 +119,7 @@ impl TermFeatures<'_> {
         {
             TermFamily::UnixTerm
         }
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(any(target_arch = "wasm32", target_os = "aros"))]
         {
             TermFamily::Dummy
         }

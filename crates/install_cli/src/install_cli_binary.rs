@@ -29,6 +29,9 @@ async fn install_script(cx: &AsyncApp) -> Result<PathBuf> {
     // If the symlink is not there or is outdated, first try replacing it
     // without escalating.
     smol::fs::remove_file(link_path).await.log_err();
+    // smol's symlink helper lives under its `unix` module; AROS is not unix, and
+    // it has no /usr/local/bin to install a CLI into either.
+    #[cfg(not(target_os = "aros"))]
     if smol::fs::unix::symlink(&cli_path, link_path)
         .await
         .log_err()

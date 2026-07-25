@@ -75,11 +75,11 @@ pub fn create_locators(
 
     // 8. Homebrew Python
     if cfg!(unix) {
-        #[cfg(any(unix, target_os = "aros"))]
+        #[cfg(unix)]
         use pet_homebrew::Homebrew;
-        #[cfg(any(unix, target_os = "aros"))]
+        #[cfg(unix)]
         let homebrew_locator = Homebrew::from(environment);
-        #[cfg(any(unix, target_os = "aros"))]
+        #[cfg(unix)]
         locators.push(Arc::new(homebrew_locator));
     }
 

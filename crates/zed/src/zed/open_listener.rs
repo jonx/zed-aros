@@ -1,8 +1,10 @@
 use crate::handle_open_request;
 use crate::restore_or_create_workspace;
+#[cfg(not(target_os = "aros"))]
 use agent_ui::ExternalSourcePrompt;
 use anyhow::{Context as _, Result, anyhow};
 use cli::{CliRequest, CliResponse, CliResponseSink};
+#[cfg(not(target_os = "aros"))]
 use cli::{IpcHandshake, ipc};
 use client::{ZedLink, parse_zed_link};
 use db::kvp::KeyValueStore;
@@ -56,9 +58,11 @@ pub enum OpenRequestKind {
     Extension {
         extension_id: String,
     },
+    #[cfg(not(target_os = "aros"))]
     AgentPanel {
         external_source_prompt: Option<ExternalSourcePrompt>,
     },
+    #[cfg(not(target_os = "aros"))]
     SharedAgentThread {
         session_id: String,
     },
@@ -93,12 +97,14 @@ impl std::fmt::Debug for OpenRequestKind {
                 .debug_struct("Extension")
                 .field("extension_id", extension_id)
                 .finish(),
+            #[cfg(not(target_os = "aros"))]
             Self::AgentPanel {
                 external_source_prompt,
             } => f
                 .debug_struct("AgentPanel")
                 .field("external_source_prompt", external_source_prompt)
                 .finish(),
+            #[cfg(not(target_os = "aros"))]
             Self::SharedAgentThread { session_id } => f
                 .debug_struct("SharedAgentThread")
                 .field("session_id", session_id)
@@ -161,7 +167,14 @@ impl OpenRequest {
         }
 
         for url in request.urls {
-            if let Some(server_name) = url.strip_prefix("zed-cli://") {
+            // No CLI-to-instance IPC on AROS, so the zed-cli:// scheme never
+            // matches there; the rest of the chain must still run.
+            #[cfg(not(target_os = "aros"))]
+            let cli_server_name = url.strip_prefix("zed-cli://");
+            #[cfg(target_os = "aros")]
+            let cli_server_name: Option<&str> = None;
+
+            if let Some(server_name) = cli_server_name {
                 this.kind = Some(OpenRequestKind::CliConnection(connect_to_cli(server_name)?));
             } else if let Some(action_index) = url.strip_prefix("zed-dock-action://") {
                 this.kind = Some(OpenRequestKind::DockMenuAction {
@@ -180,13 +193,25 @@ impl OpenRequest {
                 });
             } else if let Some(session_id_str) = url.strip_prefix("zed://agent/shared/") {
                 if uuid::Uuid::parse_str(session_id_str).is_ok() {
-                    this.kind = Some(OpenRequestKind::SharedAgentThread {
-                        session_id: session_id_str.to_string(),
-                    });
+                    #[cfg(not(target_os = "aros"))]
+                    {
+                        this.kind = Some(OpenRequestKind::SharedAgentThread {
+                            session_id: session_id_str.to_string(),
+                        });
+                    }
                 } else {
                     log::error!("Invalid session ID in URL: {}", session_id_str);
                 }
-            } else if url.starts_with(agent_skills::SKILL_SHARE_LINK_PREFIX) {
+            } else if {
+                #[cfg(target_os = "aros")]
+                {
+                    false
+                }
+                #[cfg(not(target_os = "aros"))]
+                {
+                    url.starts_with(agent_skills::SKILL_SHARE_LINK_PREFIX)
+                }
+            } {
                 this.parse_skill_install_url(&url)?
             } else if let Some(agent_path) = url.strip_prefix("zed://agent") {
                 this.parse_agent_url(agent_path)
@@ -237,20 +262,26 @@ impl OpenRequest {
     fn parse_agent_url(&mut self, agent_path: &str) {
         // Format: "" or "?prompt=<text>".
         let agent_path = agent_path.strip_prefix('/').unwrap_or(agent_path);
-        let external_source_prompt = agent_path.strip_prefix('?').and_then(|query| {
-            url::form_urlencoded::parse(query.as_bytes())
-                .find_map(|(key, value)| (key == "prompt").then_some(value))
-                .and_then(|prompt| ExternalSourcePrompt::new(prompt.as_ref()))
-        });
-        self.kind = Some(OpenRequestKind::AgentPanel {
-            external_source_prompt,
-        });
+        #[cfg(not(target_os = "aros"))]
+        {
+            let external_source_prompt = agent_path.strip_prefix('?').and_then(|query| {
+                url::form_urlencoded::parse(query.as_bytes())
+                    .find_map(|(key, value)| (key == "prompt").then_some(value))
+                    .and_then(|prompt| ExternalSourcePrompt::new(prompt.as_ref()))
+            });
+            self.kind = Some(OpenRequestKind::AgentPanel {
+                external_source_prompt,
+            });
+        }
     }
 
     fn parse_skill_install_url(&mut self, url: &str) -> Result<()> {
         // Format: zed://skill?data=<base64url of SKILL.md contents>
-        let content = agent_skills::decode_skill_share_link(url)?;
-        self.kind = Some(OpenRequestKind::InstallSkill { content });
+        #[cfg(not(target_os = "aros"))]
+        {
+            let content = agent_skills::decode_skill_share_link(url)?;
+            self.kind = Some(OpenRequestKind::InstallSkill { content });
+        }
         Ok(())
     }
 
@@ -445,6 +476,19 @@ pub fn listen_for_cli_connections(opener: OpenListener) -> Result<()> {
     Ok(())
 }
 
+/// Unreachable on AROS: `cli_server_name` is always `None` there, but the call
+/// site still has to type-check.
+#[cfg(target_os = "aros")]
+fn connect_to_cli(
+    _server_name: &str,
+) -> Result<(
+    mpsc::UnboundedReceiver<CliRequest>,
+    Box<dyn CliResponseSink>,
+)> {
+    anyhow::bail!("the CLI connection is not available on AROS")
+}
+
+#[cfg(not(target_os = "aros"))]
 fn connect_to_cli(
     server_name: &str,
 ) -> Result<(

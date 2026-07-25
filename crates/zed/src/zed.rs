@@ -636,6 +636,11 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut App) {
     .detach();
 }
 
+/// AROS has no inotify-style watcher to warn about; nothing to initialize.
+#[cfg(target_os = "aros")]
+#[allow(unused)]
+fn initialize_file_watcher(_window: &mut Window, _cx: &mut Context<Workspace>) {}
+
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 #[allow(unused)]
 fn initialize_file_watcher(window: &mut Window, cx: &mut Context<Workspace>) {
@@ -774,13 +779,20 @@ fn initialize_panels(window: &mut Window, cx: &mut Context<Workspace>) -> Task<a
             }
         }
 
+        // The collab panel does not exist on AROS; keep join!'s arity stable by
+        // substituting an already-finished future there.
+        #[cfg(not(target_os = "aros"))]
+        let channels_panel_ready =
+            add_panel_when_ready(channels_panel, workspace_handle.clone(), cx.clone());
+        #[cfg(target_os = "aros")]
+        let channels_panel_ready = std::future::ready(());
+
         futures::join!(
             add_panel_when_ready(project_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(outline_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(terminal_panel, workspace_handle.clone(), cx.clone()),
             add_panel_when_ready(git_panel, workspace_handle.clone(), cx.clone()),
-            #[cfg(not(target_os = "aros"))]
-            add_panel_when_ready(channels_panel, workspace_handle.clone(), cx.clone()),
+            channels_panel_ready,
             add_panel_when_ready(debug_panel, workspace_handle.clone(), cx.clone()),
             initialize_agent_panel(workspace_handle, cx.clone()).map(|r| r.log_err()),
         );

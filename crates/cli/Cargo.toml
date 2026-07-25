@@ -27,7 +27,7 @@ clap.workspace = true
 collections.workspace = true
 console.workspace = true
 dialoguer.workspace = true
-ipc-channel = "0.19"
+
 parking_lot.workspace = true
 paths.workspace = true
 release_channel.workspace = true
@@ -55,3 +55,8 @@ windows.workspace = true
 
 [build-dependencies]
 windows_resources = { path = "../windows_resources" }
+
+# ipc-channel selects a unix/windows/macos backend; AROS has none, and the
+# CLI-to-running-instance handshake is not used there.
+[target.'cfg(not(target_os = "aros"))'.dependencies]
+ipc-channel = "0.19"

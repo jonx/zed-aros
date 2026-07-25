@@ -6,14 +6,18 @@ edition.workspace = true
 license = "GPL-3.0-or-later"
 
 [dependencies]
-async-process.workspace = true
-crash-handler.workspace = true
 log.workspace = true
-minidumper.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 system_specs.workspace = true
+
+# crash-handler/minidumper need per-platform exception handling and unix-socket
+# IPC; neither exists on AROS, which uses the stub in src/aros.rs instead.
+[target.'cfg(not(target_os = "aros"))'.dependencies]
+crash-handler.workspace = true
+minidumper.workspace = true
+async-process.workspace = true
 zstd.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
