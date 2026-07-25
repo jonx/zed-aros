@@ -23003,6 +23003,8 @@ dependencies = [
  "file_finder",
  "fs",
  "futures 0.3.32",
+ "getrandom 0.2.16",
+ "getrandom 0.4.1",
  "git",
  "git_hosting_providers",
  "git_ui",

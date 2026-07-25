@@ -1,15 +1,21 @@
 // Disable command line from opening on release mode
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod reliability;
-mod zed;
+pub(crate) mod reliability;
+pub(crate) mod zed;
 
 // Ensure the binary name stays in sync with APP_NAME so that the paths used
 // at runtime (data dir, config dir, etc.) match what the binary is called.
 const _: () = assert!(
     paths::APP_NAME_LOWERCASE
         .as_bytes()
-        .eq_ignore_ascii_case(env!("CARGO_BIN_NAME").as_bytes()),
+        .eq_ignore_ascii_case(
+            match option_env!("CARGO_BIN_NAME") {
+                Some(name) => name,
+                None => env!("CARGO_PKG_NAME"),
+            }
+            .as_bytes(),
+        ),
     "paths::APP_NAME_LOWERCASE must match the binary name. \
      Forks: update APP_NAME in crates/paths/src/paths.rs when renaming the binary.",
 );
@@ -203,9 +209,9 @@ fn fail_to_open_window(e: anyhow::Error, _cx: &mut App) {
         .detach();
     }
 }
-static STARTUP_TIME: OnceLock<Instant> = OnceLock::new();
+pub(crate) static STARTUP_TIME: OnceLock<Instant> = OnceLock::new();
 
-fn main() {
+pub fn main() {
     STARTUP_TIME.get_or_init(|| Instant::now());
 
     #[cfg(unix)]
@@ -1003,7 +1009,7 @@ fn main() {
     });
 }
 
-fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut App) {
+pub(crate) fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut App) {
     if let Some(kind) = request.kind {
         match kind {
             OpenRequestKind::CliConnection(connection) => {
@@ -1792,7 +1798,7 @@ pub(crate) static FORCE_CLI_MODE: LazyLock<bool> = LazyLock::new(|| {
     env_var
 });
 
-fn stdout_is_a_pty() -> bool {
+pub(crate) fn stdout_is_a_pty() -> bool {
     !*FORCE_CLI_MODE && io::stdout().is_terminal()
 }
 

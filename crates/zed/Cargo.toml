@@ -53,6 +53,14 @@ visual-tests = [
     "title_bar/test-support",
 ]
 
+# AROS links a staticlib through collect-aros instead of using the host linker,
+# so the same main.rs is also compiled as a library there. Empty on every other
+# target -- see src/aros_entry.rs.
+[lib]
+name = "zed_aros_entry"
+path = "src/aros_entry.rs"
+crate-type = ["staticlib"]
+
 [[bin]]
 name = "zed"
 path = "src/main.rs"
@@ -208,6 +216,12 @@ zlog_settings.workspace = true
 # AROS cannot host these yet: the agent stack needs LMDB (memory-mapped,
 # and AROS has no VM mmap) and the extension stack needs a wasm runtime.
 # Everything else -- workspace, panels, terminal, LSP -- builds without them.
+# Custom getrandom backends (arc4random_buf) for the AROS staticlib entry;
+# see src/getrandom_aros.rs.
+[target.'cfg(target_os = "aros")'.dependencies]
+getrandom = "0.4"
+getrandom02 = { package = "getrandom", version = "0.2", features = ["custom"] }
+
 [target.'cfg(not(target_os = "aros"))'.dependencies]
 collab_ui.workspace = true
 call.workspace = true
