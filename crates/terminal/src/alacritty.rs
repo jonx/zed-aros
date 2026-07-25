@@ -68,7 +68,8 @@ impl From<&AlacrittyPty> for ProcessIdGetter {
     }
 }
 
-// AROS has no PTY; the stub Pty carries no fd or child, so report neither.
+// AROS runs the terminal over pipes rather than a PTY: there is no descriptor
+// to read a foreground process group from, and its process model has no pid.
 #[cfg(target_os = "aros")]
 impl From<&AlacrittyPty> for ProcessIdGetter {
     fn from(_pty: &AlacrittyPty) -> Self {

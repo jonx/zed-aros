@@ -28,7 +28,8 @@ impl ProcessIdGetter {
     }
 }
 
-// AROS has no PTY; the terminal is stubbed, so only the fallback pid applies.
+// AROS runs the terminal over pipes rather than a PTY, so there is no
+// foreground process group to query: only the fallback pid applies.
 #[cfg(target_os = "aros")]
 impl ProcessIdGetter {
     fn pid(&self) -> Option<Pid> {
