@@ -931,3 +931,47 @@ pub struct ip_mreq_source {
     pub imr_sourceaddr: in_addr,
     pub imr_interface: in_addr,
 }
+
+// ---- wait status (sys/wait.h) ----------------------------------------------
+// AROS has no unix process model, but `rustix`'s process module imports these
+// unconditionally, so the whole crate fails to compile without them (and takes
+// everything above it down with it). The encoding matches the usual
+// wait(2) layout, so callers that decode a status behave sensibly; on AROS the
+// only statuses that appear come from our own process glue, which reports a
+// plain exit code.
+pub const WNOHANG: c_int = 1;
+pub const WUNTRACED: c_int = 2;
+pub const WCONTINUED: c_int = 8;
+
+pub const fn WEXITSTATUS(status: c_int) -> c_int {
+    (status >> 8) & 0xff
+}
+pub const fn WTERMSIG(status: c_int) -> c_int {
+    status & 0x7f
+}
+pub const fn WSTOPSIG(status: c_int) -> c_int {
+    (status >> 8) & 0xff
+}
+pub const fn WIFEXITED(status: c_int) -> bool {
+    (status & 0x7f) == 0
+}
+pub const fn WIFSIGNALED(status: c_int) -> bool {
+    ((status & 0x7f) + 1) as i8 >= 2
+}
+pub const fn WIFSTOPPED(status: c_int) -> bool {
+    (status & 0xff) == 0x7f
+}
+pub const fn WIFCONTINUED(status: c_int) -> bool {
+    status == 0xffff
+}
+
+// waitid(2) option flags (same header). Present so `rustix`'s process module
+// compiles; AROS has no waitid, so nothing consumes them at runtime.
+pub const WSTOPPED: c_int = 2;
+pub const WEXITED: c_int = 4;
+pub const WNOWAIT: c_int = 0x0100_0000;
+
+// IPv6 multicast join/leave (netinet/in.h). RFC 3493 names; the older
+// IPV6_ADD_MEMBERSHIP/IPV6_DROP_MEMBERSHIP are the same option values.
+pub const IPV6_JOIN_GROUP: c_int = IPV6_ADD_MEMBERSHIP;
+pub const IPV6_LEAVE_GROUP: c_int = IPV6_DROP_MEMBERSHIP;

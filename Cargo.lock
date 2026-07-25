@@ -9122,8 +9122,6 @@ dependencies = [
 [[package]]
 name = "io-lifetimes"
 version = "2.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06432fb54d3be7964ecd3649233cddf80db2832f47fec34c01f65b3d9d774983"
 
 [[package]]
 name = "io-surface"

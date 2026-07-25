@@ -915,6 +915,10 @@ inventory = { path = "vendor-aros/inventory" }
 # AsFd import. The arm keeps std and reports "not a terminal" (AROS has no
 # isatty). Inert on every other target. See vendor-aros/is-terminal/src/lib.rs.
 is-terminal = { path = "vendor-aros/is-terminal" }
+# io-lifetimes gates its whole crate on cfg(unix/windows/wasi/hermit), so it is
+# empty on AROS and rustix-0.38 cannot find AsFd/BorrowedFd/OwnedFd. This copy
+# adds an aros arm sourcing them from std::os::fd. Inert elsewhere.
+io-lifetimes = { path = "vendor-aros/io-lifetimes" }
 # Vendored page_size with an AROS arm: upstream gates its page-size helpers to
 # unix/windows/wasm; aros got none. The arm returns a fixed 4 KiB. Inert on
 # every other target. See vendor-aros/page_size/src/lib.rs.
