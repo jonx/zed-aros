@@ -259,6 +259,12 @@ void *gpa_open_window(int x, int y, int inner_w, int inner_h,
         WA_Title, (IPTR)(w->title ? w->title : ""),
         WA_Flags, WFLG_DRAGBAR | WFLG_DEPTHGADGET | WFLG_CLOSEGADGET
             | WFLG_SIZEGADGET | WFLG_ACTIVATE | WFLG_SMART_REFRESH,
+        /* Without these, Intuition pins min and max to the opening size and the
+           size gadget cannot move. Intuition clamps the maxima to the screen. */
+        WA_MinWidth, 320,
+        WA_MinHeight, 200,
+        WA_MaxWidth, 0xFFFF,
+        WA_MaxHeight, 0xFFFF,
         WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_NEWSIZE | IDCMP_REFRESHWINDOW
             | IDCMP_MOUSEBUTTONS | IDCMP_MOUSEMOVE | IDCMP_RAWKEY
             | IDCMP_MENUPICK,
