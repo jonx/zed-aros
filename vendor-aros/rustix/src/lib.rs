@@ -294,7 +294,10 @@ pub mod stdio;
 #[cfg(not(any(windows, target_os = "wasi")))]
 #[cfg_attr(docsrs, doc(cfg(feature = "system")))]
 pub mod system;
-#[cfg(not(any(windows, target_os = "horizon", target_os = "vita")))]
+// AROS has no tty/termios layer at all, and nothing in this tree calls into
+// it; compiling the module would only require ~130 constants that could never
+// do anything.
+#[cfg(not(any(windows, target_os = "horizon", target_os = "vita", target_os = "aros")))]
 #[cfg(feature = "termios")]
 #[cfg_attr(docsrs, doc(cfg(feature = "termios")))]
 pub mod termios;

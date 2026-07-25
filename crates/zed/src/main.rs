@@ -14,8 +14,10 @@ const _: () = assert!(
      Forks: update APP_NAME in crates/paths/src/paths.rs when renaming the binary.",
 );
 
+#[cfg(not(target_os = "aros"))]
 use agent::{SharedThread, ThreadStore};
 use agent_client_protocol::schema as acp;
+#[cfg(not(target_os = "aros"))]
 use agent_ui::AgentPanel;
 use anyhow::{Context as _, Result};
 use clap::Parser;
@@ -26,6 +28,7 @@ use collections::HashMap;
 use crashes::InitCrashHandler;
 use db::kvp::{GlobalKeyValueStore, KeyValueStore};
 use editor::Editor;
+#[cfg(not(target_os = "aros"))]
 use extension::ExtensionHostProxy;
 use fs::{Fs, RealFs};
 use futures::{StreamExt, channel::oneshot, future};
@@ -41,6 +44,7 @@ use gpui_tokio::Tokio;
 use language::LanguageRegistry;
 use onboarding::{FIRST_OPEN, show_onboarding_view};
 use project_panel::ProjectPanel;
+#[cfg(not(target_os = "aros"))]
 use prompt_store::PromptBuilder;
 use remote::RemoteConnectionOptions;
 use reqwest_client::ReqwestClient;
@@ -519,7 +523,9 @@ fn main() {
 
         OpenListener::set_global(cx, open_listener.clone());
 
+        #[cfg(not(target_os = "aros"))]
         extension::init(cx);
+        #[cfg(not(target_os = "aros"))]
         let extension_host_proxy = ExtensionHostProxy::global(cx);
 
         let client = Client::production(cx);
@@ -556,11 +562,13 @@ fn main() {
 
         let node_runtime = NodeRuntime::new(client.http_client(), Some(shell_env_loaded_rx), rx);
 
+#[cfg(not(target_os = "aros"))]
         debug_adapter_extension::init(extension_host_proxy.clone(), cx);
         languages::init(languages.clone(), fs.clone(), node_runtime.clone(), cx);
         let user_store = cx.new(|cx| UserStore::new(client.clone(), cx));
         let workspace_store = cx.new(|cx| WorkspaceStore::new(client.clone(), cx));
 
+#[cfg(not(target_os = "aros"))]
         language_extension::init(
             language_extension::LspAccess::ViaWorkspaces({
                 let workspace_store = workspace_store.clone();
@@ -656,6 +664,7 @@ fn main() {
         dap_adapters::init(cx);
         auto_update_ui::init(cx);
         reliability::init(client.clone(), cx);
+#[cfg(not(target_os = "aros"))]
         extension_host::init(
             extension_host_proxy.clone(),
             app_state.fs.clone(),
@@ -666,6 +675,7 @@ fn main() {
 
         theme_settings::init(theme::LoadThemes::All(Box::new(Assets)), cx);
         eager_load_active_theme_and_icon_theme(fs.clone(), cx);
+#[cfg(not(target_os = "aros"))]
         theme_extension::init(
             extension_host_proxy,
             ThemeRegistry::global(cx),
@@ -708,6 +718,7 @@ fn main() {
             app_state.fs.clone(),
             app_state.client.http_client(),
         );
+#[cfg(not(target_os = "aros"))]
         agent_ui::init(
             app_state.fs.clone(),
             prompt_builder,
@@ -741,6 +752,7 @@ fn main() {
         project_panel::init(cx);
         outline_panel::init(cx);
         tasks_ui::init(cx);
+#[cfg(not(target_os = "aros"))]
         snippets_ui::init(cx);
         channel::init(&app_state.client.clone(), app_state.user_store.clone(), cx);
         search::init(cx);
@@ -774,6 +786,7 @@ fn main() {
         onboarding::init(cx);
         settings_ui::init(cx);
         keymap_editor::init(cx);
+#[cfg(not(target_os = "aros"))]
         extensions_ui::init(cx);
         edit_prediction::init(cx);
         inspector_ui::init(app_state.clone(), cx);

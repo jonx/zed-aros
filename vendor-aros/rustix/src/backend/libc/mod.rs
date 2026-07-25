@@ -153,7 +153,9 @@ pub(crate) mod rand;
 #[cfg(feature = "system")]
 pub(crate) mod system;
 #[cfg(not(any(windows, target_os = "horizon", target_os = "vita")))]
+// Gated off on AROS alongside the public `termios` module (no tty layer).
 #[cfg(feature = "termios")]
+#[cfg(not(target_os = "aros"))]
 pub(crate) mod termios;
 #[cfg(not(windows))]
 #[cfg(feature = "thread")]

@@ -975,3 +975,150 @@ pub const WNOWAIT: c_int = 0x0100_0000;
 // IPV6_ADD_MEMBERSHIP/IPV6_DROP_MEMBERSHIP are the same option values.
 pub const IPV6_JOIN_GROUP: c_int = IPV6_ADD_MEMBERSHIP;
 pub const IPV6_LEAVE_GROUP: c_int = IPV6_DROP_MEMBERSHIP;
+
+// ---- POSIX surface rustix expects ------------------------------------------
+// AROS implements almost none of this (no signals, no tty layer, no rlimits).
+// These exist so `rustix` -- which imports them unconditionally -- compiles;
+// anything that actually calls them fails at link, which is the honest outcome.
+// Values follow the standard Linux/aarch64 numbering, and the six signals AROS
+// does define (SIGABRT/FPE/ILL/INT/SEGV/TERM) match its own <signal.h>.
+
+pub const EXIT_SUCCESS: c_int = 0;
+pub const EXIT_FAILURE: c_int = 1;
+
+pub const SIGHUP: c_int = 1;
+pub const SIGINT: c_int = 2;
+pub const SIGQUIT: c_int = 3;
+pub const SIGILL: c_int = 4;
+pub const SIGTRAP: c_int = 5;
+pub const SIGABRT: c_int = 6;
+pub const SIGBUS: c_int = 7;
+pub const SIGFPE: c_int = 8;
+pub const SIGKILL: c_int = 9;
+pub const SIGUSR1: c_int = 10;
+pub const SIGSEGV: c_int = 11;
+pub const SIGUSR2: c_int = 12;
+pub const SIGPIPE: c_int = 13;
+pub const SIGALRM: c_int = 14;
+pub const SIGTERM: c_int = 15;
+pub const SIGSTKFLT: c_int = 16;
+pub const SIGCHLD: c_int = 17;
+pub const SIGCONT: c_int = 18;
+pub const SIGSTOP: c_int = 19;
+pub const SIGTSTP: c_int = 20;
+pub const SIGTTIN: c_int = 21;
+pub const SIGTTOU: c_int = 22;
+pub const SIGURG: c_int = 23;
+pub const SIGXCPU: c_int = 24;
+pub const SIGXFSZ: c_int = 25;
+pub const SIGVTALRM: c_int = 26;
+pub const SIGPROF: c_int = 27;
+pub const SIGWINCH: c_int = 28;
+pub const SIGIO: c_int = 29;
+pub const SIGPWR: c_int = 30;
+pub const SIGSYS: c_int = 31;
+
+pub const CLD_EXITED: c_int = 1;
+pub const CLD_KILLED: c_int = 2;
+pub const CLD_DUMPED: c_int = 3;
+pub const CLD_TRAPPED: c_int = 4;
+pub const CLD_STOPPED: c_int = 5;
+pub const CLD_CONTINUED: c_int = 6;
+
+pub type clockid_t = c_int;
+pub const CLOCK_REALTIME: clockid_t = 0;
+pub const CLOCK_MONOTONIC: clockid_t = 1;
+pub const CLOCK_PROCESS_CPUTIME_ID: clockid_t = 2;
+pub const CLOCK_THREAD_CPUTIME_ID: clockid_t = 3;
+
+pub const P_ALL: c_int = 0;
+pub const P_PID: c_int = 1;
+pub const P_PGID: c_int = 2;
+
+pub const PRIO_PROCESS: c_int = 0;
+pub const PRIO_PGRP: c_int = 1;
+pub const PRIO_USER: c_int = 2;
+
+pub type rlim_t = u64;
+pub const RLIM_INFINITY: rlim_t = !0;
+pub const RLIMIT_CPU: c_int = 0;
+pub const RLIMIT_FSIZE: c_int = 1;
+pub const RLIMIT_DATA: c_int = 2;
+pub const RLIMIT_STACK: c_int = 3;
+pub const RLIMIT_CORE: c_int = 4;
+pub const RLIMIT_RSS: c_int = 5;
+pub const RLIMIT_NPROC: c_int = 6;
+pub const RLIMIT_NOFILE: c_int = 7;
+pub const RLIMIT_MEMLOCK: c_int = 8;
+pub const RLIMIT_AS: c_int = 9;
+pub const RLIMIT_LOCKS: c_int = 10;
+pub const RLIMIT_SIGPENDING: c_int = 11;
+pub const RLIMIT_MSGQUEUE: c_int = 12;
+pub const RLIMIT_NICE: c_int = 13;
+pub const RLIMIT_RTPRIO: c_int = 14;
+pub const RLIMIT_RTTIME: c_int = 15;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct rlimit {
+    pub rlim_cur: rlim_t,
+    pub rlim_max: rlim_t,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct siginfo_t {
+    pub si_signo: c_int,
+    pub si_errno: c_int,
+    pub si_code: c_int,
+    _pad: [c_int; 29],
+}
+
+impl siginfo_t {
+    /// The child exit status, as `libc` exposes it. Nothing on AROS produces a
+    /// `siginfo_t` today, so this reports zero rather than reading `_pad`.
+    pub unsafe fn si_status(&self) -> c_int {
+        0
+    }
+}
+
+// tty ioctls rustix's process module references (AROS has no controlling tty;
+// present so the module compiles).
+pub const TIOCSCTTY: c_ulong = 0x540E;
+pub const TIOCGWINSZ: c_ulong = 0x5413;
+pub const TIOCSWINSZ: c_ulong = 0x5414;
+pub const TIOCEXCL: c_ulong = 0x540C;
+pub const TIOCNXCL: c_ulong = 0x540D;
+
+pub const _SC_PAGESIZE: c_int = 30;
+pub const _SC_CLK_TCK: c_int = 2;
+
+extern "C" {
+    pub fn getpid() -> pid_t;
+    pub fn getppid() -> pid_t;
+    pub fn getpgid(pid: pid_t) -> pid_t;
+    pub fn getpgrp() -> pid_t;
+    pub fn setpgid(pid: pid_t, pgid: pid_t) -> c_int;
+    pub fn getsid(pid: pid_t) -> pid_t;
+    pub fn setsid() -> pid_t;
+    pub fn kill(pid: pid_t, sig: c_int) -> c_int;
+    pub fn waitpid(pid: pid_t, status: *mut c_int, options: c_int) -> pid_t;
+    pub fn waitid(idtype: c_int, id: pid_t, infop: *mut siginfo_t, options: c_int) -> c_int;
+    pub fn nice(inc: c_int) -> c_int;
+    pub fn getpriority(which: c_int, who: c_uint) -> c_int;
+    pub fn setpriority(which: c_int, who: c_uint, prio: c_int) -> c_int;
+    pub fn getrlimit(resource: c_int, rlim: *mut rlimit) -> c_int;
+    pub fn setrlimit(resource: c_int, rlim: *const rlimit) -> c_int;
+    pub fn chdir(dir: *const c_char) -> c_int;
+    pub fn fchdir(fd: c_int) -> c_int;
+    pub fn chroot(name: *const c_char) -> c_int;
+    pub fn getcwd(buf: *mut c_char, size: usize) -> *mut c_char;
+    pub fn getgroups(ngroups: c_int, groups: *mut c_uint) -> c_int;
+    pub fn umask(mask: mode_t) -> mode_t;
+    pub fn sysconf(name: c_int) -> c_long;
+    pub fn isatty(fd: c_int) -> c_int;
+    pub fn ttyname_r(fd: c_int, buf: *mut c_char, buflen: usize) -> c_int;
+    pub fn clock_gettime(clk: clockid_t, tp: *mut timespec) -> c_int;
+    pub fn clock_settime(clk: clockid_t, tp: *const timespec) -> c_int;
+    pub fn clock_getres(clk: clockid_t, tp: *mut timespec) -> c_int;
+}

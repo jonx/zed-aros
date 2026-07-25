@@ -15,7 +15,9 @@ pub mod visual_tests;
 #[cfg(target_os = "windows")]
 pub(crate) mod windows_only_instance;
 
+#[cfg(not(target_os = "aros"))]
 use agent_settings::{UserAgentsMdState, init_user_agents_md};
+#[cfg(not(target_os = "aros"))]
 use agent_ui::AgentDiffToolbar;
 use anyhow::Context as _;
 pub use app_menus::*;
@@ -26,6 +28,7 @@ use client::zed_urls;
 use collections::VecDeque;
 use debugger_ui::debugger_panel::DebugPanel;
 use editor::{Editor, MultiBuffer};
+#[cfg(not(target_os = "aros"))]
 use extension_host::ExtensionStore;
 use feature_flags::{FeatureFlagAppExt as _, PanicFeatureFlag};
 use fs::Fs;
@@ -482,6 +485,7 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut App) {
                 let active_workspace = this.workspace().clone();
                 let source_workspace = source_workspace.clone();
                 active_workspace.update(cx, |workspace, cx| {
+                    #[cfg(not(target_os = "aros"))]
                     if let Some(ref source) = source_workspace {
                         if let Some(panel) = workspace.panel::<agent_ui::AgentPanel>(cx) {
                             panel.update(cx, |panel, cx| {
@@ -815,6 +819,17 @@ fn setup_or_teardown_ai_panel<P: Panel>(
     }
 }
 
+#[cfg(target_os = "aros")]
+fn ensure_agent_panel_for_workspace(
+    _workspace: &mut Workspace,
+    _source_workspace: Option<WeakEntity<Workspace>>,
+    _window: &mut Window,
+    _cx: &mut Context<Workspace>,
+) -> Task<anyhow::Result<()>> {
+    Task::ready(Ok(()))
+}
+
+#[cfg(not(target_os = "aros"))]
 fn ensure_agent_panel_for_workspace(
     workspace: &mut Workspace,
     source_workspace: Option<WeakEntity<Workspace>>,
@@ -839,6 +854,15 @@ fn ensure_agent_panel_for_workspace(
     })
 }
 
+#[cfg(target_os = "aros")]
+async fn initialize_agent_panel(
+    _workspace_handle: WeakEntity<Workspace>,
+    _cx: AsyncWindowContext,
+) -> anyhow::Result<()> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "aros"))]
 async fn initialize_agent_panel(
     workspace_handle: WeakEntity<Workspace>,
     mut cx: AsyncWindowContext,
@@ -862,6 +886,7 @@ async fn initialize_agent_panel(
         //
         // Once we ship `assistant2` we can push this back down into `agent::agent_panel::init`.
         if !cfg!(test) {
+            #[cfg(not(target_os = "aros"))]
             workspace
                 .register_action(agent_ui::AgentPanel::toggle_focus)
                 .register_action(agent_ui::AgentPanel::focus)
@@ -1412,8 +1437,11 @@ fn initialize_pane(
             toolbar.add_item(solo_diff_git_toolbar, window, cx);
             let commit_view_toolbar = cx.new(|_| CommitViewToolbar::new());
             toolbar.add_item(commit_view_toolbar, window, cx);
-            let agent_diff_toolbar = cx.new(AgentDiffToolbar::new);
-            toolbar.add_item(agent_diff_toolbar, window, cx);
+            #[cfg(not(target_os = "aros"))]
+            {
+                let agent_diff_toolbar = cx.new(AgentDiffToolbar::new);
+                toolbar.add_item(agent_diff_toolbar, window, cx);
+            }
             let basedpyright_banner = cx.new(|cx| BasedPyrightBanner::new(workspace, cx));
             toolbar.add_item(basedpyright_banner, window, cx);
             let image_view_toolbar = cx.new(|_| image_viewer::ImageViewToolbarControls::new());
@@ -1978,6 +2006,12 @@ fn init_cursor_hide_mode(cx: &mut App) {
 ///
 /// The file itself is loaded into [`agent_settings::UserAgentsMd`] for inclusion
 /// in prompts.
+/// The user AGENTS.md only feeds agent prompts, and the agent stack is not
+/// built on AROS.
+#[cfg(target_os = "aros")]
+pub fn watch_user_agents_md(_fs: Arc<dyn fs::Fs>, _cx: &mut App) {}
+
+#[cfg(not(target_os = "aros"))]
 pub fn watch_user_agents_md(fs: Arc<dyn fs::Fs>, cx: &mut App) {
     struct UserAgentsMdParseError;
     let notification_id = NotificationId::unique::<UserAgentsMdParseError>();
@@ -2527,6 +2561,12 @@ fn open_settings_file(
 ///
 /// This fast path exists to load these themes as soon as possible so the user
 /// doesn't see the default themes while waiting on extensions to load.
+/// On AROS there are no extensions, so any theme that is not already in the
+/// registry cannot be loaded: nothing to do.
+#[cfg(target_os = "aros")]
+pub(crate) fn eager_load_active_theme_and_icon_theme(_fs: Arc<dyn Fs>, _cx: &mut App) {}
+
+#[cfg(not(target_os = "aros"))]
 pub(crate) fn eager_load_active_theme_and_icon_theme(fs: Arc<dyn Fs>, cx: &mut App) {
     let extension_store = ExtensionStore::global(cx);
     let theme_registry = ThemeRegistry::global(cx);
