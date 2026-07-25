@@ -941,6 +941,14 @@ errno = { path = "vendor-aros/errno" }
 # readiness via WaitSelect is Phase B). Inert on every other target. Needs the
 # rust-aros std to expose `std::os::fd` for aros. See vendor-aros/polling/src/aros.rs.
 polling = { path = "vendor-aros/polling" }
+# Vendored parking_lot_core 0.9.12 with an AROS thread parker. AROS is not
+# cfg(unix), so upstream falls through to its generic parker, whose park() is a
+# bare spin_loop(): a parked thread burns its whole quantum and, since AROS
+# round-robins tasks of equal priority, starves every other one (tokio parks its
+# idle workers here, which froze the editor). The aros arm parks on
+# pthread.library mutex/condvar through the same glue the std sync pal uses.
+# Inert on every other target. See vendor-aros/parking_lot_core/src/thread_parker/aros.rs.
+parking_lot_core = { path = "vendor-aros/parking_lot_core" }
 # Vendored libc with an AROS module (aros is not cfg(unix), so upstream gives it
 # an empty module). Phase 1: primitive/socket types, errno, socket+IP constants,
 # sockaddr structs, net/fd fns from the AROS SDK headers. Unblocks rustix ->
