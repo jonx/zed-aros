@@ -14,6 +14,7 @@ mod lsp_adapter;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+
 use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, Window, px, size};
 use gpui_platform::application;
 use uuid::Uuid;

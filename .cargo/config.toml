@@ -29,6 +29,9 @@ rustflags = [
     "-C", "symbol-mangling-version=v0",
     "--cfg", "tokio_unstable",
     "--cfg", 'getrandom_backend="custom"',
+    # Frame pointers so AROS's trap backtrace (and our watch-allocator FP walk)
+    # can unwind Rust frames to the huge-allocation call site.
+    "-C", "force-frame-pointers=yes",
 ]
 
 [env]

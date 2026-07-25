@@ -1,135 +1,90 @@
-//! Async-stack reproducer for the LSP-over-socket corruption. Two modes:
-//!
-//!  * pattern (port 12346): read a known byte pattern, verify byte-exact.
-//!  * lsp     (port 9257) : send a real LSP `initialize` to the host bridge and
-//!    read the framed response, printing the parsed Content-Length. A sane
-//!    length + a clean body read means the single-threaded stack handles real
-//!    rust-analyzer output; a garbage length reproduces the editor's OOM here,
-//!    in isolation.
+//! LSP reader reproducer using the EXACT primitives input_handler.rs uses:
+//! smol BufReader + AsyncBufReadExt::read_until(b'\n') for headers, and
+//! read_exact for the body. Talks to the real host bridge (127.0.0.1:9257).
+//! Single-threaded first: if this loses frame sync / runs read_until away, the
+//! bug is in those primitives on the AROS async stream, not raw read().
 
-use futures_lite::{AsyncReadExt, AsyncWriteExt};
+use futures_lite::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
+use smol::io::BufReader;
 use std::net::{Ipv4Addr, SocketAddr};
 
-const PATTERN_SIZE: usize = 256 * 1024;
+const CONTENT_LEN: &str = "Content-Length: ";
+const HDR_END: &[u8; 4] = b"\r\n\r\n";
+const CAP: usize = 8 * 1024 * 1024; // reproducer self-guard; real bug shows as a big printed len
+
+async fn read_headers<R: futures_lite::AsyncBufRead + Unpin>(
+    r: &mut R,
+    buf: &mut Vec<u8>,
+) -> std::io::Result<bool> {
+    loop {
+        if buf.len() >= 4 && &buf[buf.len() - 4..] == HDR_END {
+            return Ok(true);
+        }
+        if buf.len() > CAP {
+            println!("[LSP] read_headers RUNAWAY at {} bytes; first 300: {:?}",
+                     buf.len(), String::from_utf8_lossy(&buf[..300.min(buf.len())]));
+            return Ok(false);
+        }
+        let n = r.read_until(b'\n', buf).await?;
+        if n == 0 {
+            println!("[LSP] EOF in headers ({} bytes so far)", buf.len());
+            return Ok(false);
+        }
+    }
+}
 
 #[no_mangle]
 pub extern "C" fn sockprobe_main() -> i32 {
-    let pat = pattern_test();
-    let lsp = lsp_test();
-    if pat == 0 && lsp == 0 {
-        println!("RUST-AROS: SOCKPROBE PASS");
-        0
-    } else {
-        println!("RUST-AROS: SOCKPROBE FAIL (pattern={pat} lsp={lsp})");
-        1
-    }
-}
-
-fn pattern_test() -> i32 {
-    let addr = SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 12346));
-    let r: std::io::Result<Vec<u8>> = smol::block_on(async move {
-        let stream = smol::net::TcpStream::connect(addr).await?;
-        let mut writer = stream.clone();
-        let mut reader = stream;
-        writer.write_all(format!("{PATTERN_SIZE}\n").as_bytes()).await?;
-        writer.flush().await?;
-        let mut got = Vec::with_capacity(PATTERN_SIZE);
-        let mut buf = vec![0u8; 4096];
-        loop {
-            let n = reader.read(&mut buf).await?;
-            if n == 0 || n > buf.len() {
-                break;
-            }
-            got.extend_from_slice(&buf[..n]);
-            if got.len() >= PATTERN_SIZE {
-                break;
-            }
-        }
-        Ok(got)
-    });
-    match r {
-        Ok(got) if got.len() == PATTERN_SIZE && got.iter().enumerate().all(|(i, b)| *b == (i % 251) as u8) => {
-            println!("[PATTERN] PASS {PATTERN_SIZE} bytes byte-exact");
-            0
-        }
-        Ok(got) => {
-            println!("[PATTERN] FAIL len={}", got.len());
-            1
-        }
-        Err(e) => {
-            println!("[PATTERN] ERR {e:?}");
-            1
-        }
-    }
-}
-
-fn lsp_test() -> i32 {
     let addr = SocketAddr::from((Ipv4Addr::new(127, 0, 0, 1), 9257));
-    let body = br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}"#;
-    let r: std::io::Result<()> = smol::block_on(async move {
+    let rc: std::io::Result<i32> = smol::block_on(async move {
         let stream = smol::net::TcpStream::connect(addr).await?;
         let mut writer = stream.clone();
-        let mut reader = stream;
-        // frame + send the initialize request
-        let req = format!("Content-Length: {}\r\n\r\n", body.len());
-        writer.write_all(req.as_bytes()).await?;
-        writer.write_all(body).await?;
-        writer.flush().await?;
-        println!("[LSP] sent initialize ({} body bytes), reading response...", body.len());
+        let mut reader = BufReader::new(stream);
 
-        // Read the header line by line, exactly like the LSP reader: accumulate
-        // until "\r\n\r\n", parse Content-Length, then read that many body bytes.
-        let mut hdr: Vec<u8> = Vec::new();
-        let mut one = [0u8; 1];
+        // Send initialize (id 1), then initialized + didOpen -- same traffic the editor sends.
+        for body in [
+            &br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":null,"capabilities":{}}}"#[..],
+            &br#"{"jsonrpc":"2.0","method":"initialized","params":{}}"#[..],
+            &br#"{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":"file:///tmp/x.rs","languageId":"rust","version":1,"text":"fn main(){}\n"}}}"#[..],
+        ] {
+            writer.write_all(format!("Content-Length: {}\r\n\r\n", body.len()).as_bytes()).await?;
+            writer.write_all(body).await?;
+        }
+        writer.flush().await?;
+        println!("[LSP] requests sent; reading frames with BufReader/read_until/read_exact");
+
+        let mut buffer = Vec::new();
+        let mut frames = 0;
         loop {
-            let n = reader.read(&mut one).await?;
-            if n == 0 {
-                println!("[LSP] EOF while reading header (got {} bytes: {:?})", hdr.len(),
-                         String::from_utf8_lossy(&hdr));
-                return Ok(());
+            buffer.clear();
+            if !read_headers(&mut reader, &mut buffer).await? {
+                println!("[LSP] header read failed at frame {frames}");
+                return Ok(1);
             }
-            hdr.push(one[0]);
-            if hdr.ends_with(b"\r\n\r\n") {
-                break;
+            let headers = String::from_utf8_lossy(&buffer).to_string();
+            let message_len: usize = headers
+                .split('\n')
+                .find(|l| l.starts_with(CONTENT_LEN))
+                .and_then(|l| l.strip_prefix(CONTENT_LEN))
+                .and_then(|v| v.trim_end().parse().ok())
+                .unwrap_or(usize::MAX);
+            println!("[LSP] frame {frames}: Content-Length={message_len}");
+            if message_len == usize::MAX || message_len > CAP {
+                println!("[LSP] SUSPECT len {message_len}; headers={headers:?}");
+                return Ok(2);
             }
-            if hdr.len() > 4096 {
-                println!("[LSP] header too long ({} bytes), aborting: {:?}", hdr.len(),
-                         String::from_utf8_lossy(&hdr[..hdr.len().min(200)]));
-                return Ok(());
+            buffer.resize(message_len, 0);
+            reader.read_exact(&mut buffer).await?;
+            frames += 1;
+            if frames >= 3 {
+                println!("[LSP] read {frames} frames cleanly via editor primitives");
+                return Ok(0);
             }
         }
-        let headers = String::from_utf8_lossy(&hdr);
-        println!("[LSP] raw headers: {:?}", headers);
-        let clen: usize = headers
-            .lines()
-            .find_map(|l| l.strip_prefix("Content-Length:"))
-            .and_then(|v| v.trim().parse().ok())
-            .unwrap_or(0);
-        println!("[LSP] parsed Content-Length = {clen}");
-        if clen == 0 || clen > 4 * 1024 * 1024 {
-            println!("[LSP] SUSPECT length {clen} (this is the editor OOM trigger)");
-            return Ok(());
-        }
-        // read the body (bounded read, no giant preallocation)
-        let mut body_buf = vec![0u8; clen];
-        let mut off = 0;
-        while off < clen {
-            let n = reader.read(&mut body_buf[off..]).await?;
-            if n == 0 {
-                break;
-            }
-            off += n;
-        }
-        println!("[LSP] read {off}/{clen} body bytes; first 80: {:?}",
-                 String::from_utf8_lossy(&body_buf[..off.min(80)]));
-        println!("[LSP] OK: real rust-analyzer response framed correctly");
-        Ok(())
     });
-    match r {
-        Ok(()) => 0,
-        Err(e) => {
-            println!("[LSP] ERR {e:?}");
-            1
-        }
+    match rc {
+        Ok(0) => { println!("RUST-AROS: SOCKPROBE PASS"); 0 }
+        Ok(c) => { println!("RUST-AROS: SOCKPROBE FAIL ({c})"); c }
+        Err(e) => { println!("[LSP] ERR {e:?}"); println!("RUST-AROS: SOCKPROBE FAIL"); 3 }
     }
 }
