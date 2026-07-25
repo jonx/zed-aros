@@ -30,6 +30,10 @@ pub(crate) type PlatformScreenCaptureFrame = scap::frame::Frame;
 pub(crate) type PlatformScreenCaptureFrame = ();
 #[cfg(all(target_os = "macos", feature = "screen-capture"))]
 pub(crate) type PlatformScreenCaptureFrame = core_video::image_buffer::CVImageBuffer;
+// AROS has no screen-capture backend; the feature may still be enabled by the
+// dependency graph, so give it the same empty frame as a build without it.
+#[cfg(all(target_os = "aros", feature = "screen-capture"))]
+pub(crate) type PlatformScreenCaptureFrame = ();
 
 use crate::{
     Action, AnyWindowHandle, App, AsyncWindowContext, BackgroundExecutor, Bounds,

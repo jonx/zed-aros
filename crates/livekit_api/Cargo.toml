@@ -16,7 +16,6 @@ doctest = false
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
-jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
 log.workspace = true
 prost.workspace = true
 prost-types.workspace = true
@@ -28,3 +27,12 @@ prost-build.workspace = true
 
 [package.metadata.cargo-machete]
 ignored = ["prost-types"]
+
+# aws-lc-rs is a C library that does not build for AROS; jsonwebtoken's
+# pure-Rust backend provides the same JWT signing there.
+[target.'cfg(not(target_os = "aros"))'.dependencies]
+jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
+
+[target.'cfg(target_os = "aros")'.dependencies]
+jsonwebtoken = { workspace = true, features = ["rust_crypto"] }
+

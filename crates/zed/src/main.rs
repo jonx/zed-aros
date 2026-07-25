@@ -703,7 +703,9 @@ fn main() {
             app_state.user_store.clone(),
             cx,
         );
+        #[cfg(not(target_os = "aros"))]
         language_models::init(app_state.user_store.clone(), app_state.client.clone(), cx);
+        #[cfg(not(target_os = "aros"))]
         acp_tools::init(cx);
         zed::telemetry_log::init(cx);
         zed::remote_debug::init(cx);
@@ -784,6 +786,7 @@ fn main() {
         csv_preview::init(cx);
         svg_preview::init(cx);
         onboarding::init(cx);
+        #[cfg(not(target_os = "aros"))]
         settings_ui::init(cx);
         keymap_editor::init(cx);
 #[cfg(not(target_os = "aros"))]
@@ -1164,6 +1167,7 @@ fn handle_open_request(request: OpenRequest, app_state: Arc<AppState>, cx: &mut 
                         workspace::get_any_active_multi_workspace(app_state, cx.clone()).await?;
 
                     multi_workspace.update(cx, |_multi_workspace, _window, cx| {
+                        #[cfg(not(target_os = "aros"))]
                         settings_ui::open_skill_creator(
                             settings_ui::pages::SkillCreatorOpenMode::Install { content },
                             Some(multi_workspace),
