@@ -7,9 +7,10 @@
 //! it, and watch its output appear.
 //!
 //! What that means in practice:
-//!   - a shell prompt, commands, and their output all work;
-//!   - full-screen programs do not, because nothing reflows them and they see
-//!     no terminal size;
+//!   - commands and their output work;
+//!   - there is no prompt: the shell does not know it is interactive;
+//!   - full-screen programs do not work, because nothing reflows them and they
+//!     see no terminal size;
 //!   - `on_resize` is inert for the same reason.
 //!
 //! A real PTY would replace this wholesale (item 3 of the port's
@@ -19,8 +20,16 @@
 //! be handed to the poller. A reader thread does blocking reads into a shared
 //! buffer instead, and the `Read` impl drains that buffer, reporting
 //! `WouldBlock` when it is empty -- which is what the event loop expects from a
-//! non-blocking source.
+//! non-blocking source. Nothing can be *registered* with the poller, but it can
+//! still be woken, so `register` keeps it and the reader thread notifies it once
+//! there is something to show. The event loop also ticks on a timer
+//! (`AROS_TICK`), which is what notices the child exiting.
+//!
+//! Line discipline: there is no tty to do it, so `PtyWriter` does the two parts
+//! that are load-bearing -- echoing what was typed, and turning the terminal's
+//! `\r` into the `\n` a shell reads as end of line.
 
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::os::fd::OwnedFd;
@@ -52,6 +61,11 @@ impl SignalMask {
 struct Inbox {
     buf: VecDeque<u8>,
     eof: bool,
+    /// Set once the event loop registers. Nothing here can be *added* to a
+    /// poller, but it can still be woken, which is how output reaches the
+    /// screen when the terminal is idle rather than waiting for the next
+    /// keystroke to shake it loose.
+    waker: Option<Arc<Poller>>,
 }
 
 pub struct PtyReader {
@@ -77,13 +91,43 @@ impl Read for PtyReader {
     }
 }
 
+/// The child's stdin, plus the two jobs a tty's line discipline would be doing.
+///
+/// A terminal sends `\r` for Return and expects the tty to echo what was typed;
+/// there is no tty here, so the shell would see a line that never ends and the
+/// user would see nothing at all. So Return is translated to `\n` on the way to
+/// the child, and everything written is echoed back into the same buffer the
+/// child's output arrives in.
 pub struct PtyWriter {
     stdin: ChildStdin,
+    inbox: Arc<Mutex<Inbox>>,
 }
 
 impl Write for PtyWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.stdin.write(buf)
+        let line_ends = buf.iter().any(|&b| b == b'\r');
+        let translated: Cow<'_, [u8]> = if line_ends {
+            Cow::Owned(buf.iter().map(|&b| if b == b'\r' { b'\n' } else { b }).collect())
+        } else {
+            Cow::Borrowed(buf)
+        };
+        self.stdin.write_all(&translated)?;
+        // A shell only acts on a whole line, so push it through rather than
+        // leaving it in a buffer the child cannot see.
+        if line_ends {
+            self.stdin.flush()?;
+        }
+
+        let mut inbox = self.inbox.lock().unwrap_or_else(|e| e.into_inner());
+        for &b in buf {
+            // The grid needs both halves to put the cursor at the next line.
+            if b == b'\r' {
+                inbox.buf.extend(b"\r\n");
+            } else {
+                inbox.buf.push_back(b);
+            }
+        }
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -105,10 +149,19 @@ fn unsupported(what: &'static str) -> io::Error {
 }
 
 pub fn new(config: &Options, _window_size: WindowSize, _window_id: u64) -> io::Result<Pty> {
-    // AROS has no $SHELL; the boot shell is the shell.
+    // AROS has no shell to run as a program: the shell is a resident segment,
+    // and there is no `C:Shell` to start. What AROS understands is a command
+    // line with no command in it, which starts a shell that reads the input it
+    // was given -- an interactive shell on our pipes, which is what a terminal
+    // is. So the default here is no program at all.
+    //
+    // Zed has no way to know that and asks for `/bin/sh` (there being no
+    // `$SHELL` to read), so a unix shell path means "just give me a shell".
     let (program, args) = match &config.shell {
-        Some(shell) => (shell.program.clone(), shell.args.clone()),
-        None => ("C:Shell".to_owned(), Vec::new()),
+        Some(shell) if !shell.program.starts_with('/') => {
+            (shell.program.clone(), shell.args.clone())
+        }
+        _ => (String::new(), Vec::new()),
     };
 
     let mut cmd = Command::new(&program);
@@ -139,8 +192,8 @@ pub fn new(config: &Options, _window_size: WindowSize, _window_id: u64) -> io::R
 
     Ok(Pty {
         child,
-        reader: PtyReader { inbox },
-        writer: PtyWriter { stdin },
+        reader: PtyReader { inbox: inbox.clone() },
+        writer: PtyWriter { stdin, inbox },
         reported_exit: false,
         running,
     })
@@ -158,12 +211,26 @@ fn spawn_pump<R: Read + Send + 'static>(
 ) {
     std::thread::spawn(move || {
         let mut chunk = [0u8; 4096];
+        // The rest of the line discipline: a terminal takes `\n` as "down one
+        // line" and nothing more, so without this every line starts under the
+        // end of the one before it. AROS writes bare newlines, so put the
+        // carriage return back -- unless the child sent one already.
+        let mut after_cr = false;
         loop {
             match src.read(&mut chunk) {
                 Ok(0) => break,
                 Ok(n) => {
                     let mut guard = inbox.lock().unwrap_or_else(|e| e.into_inner());
-                    guard.buf.extend(&chunk[..n]);
+                    for &b in &chunk[..n] {
+                        if b == b'\n' && !after_cr {
+                            guard.buf.push_back(b'\r');
+                        }
+                        guard.buf.push_back(b);
+                        after_cr = b == b'\r';
+                    }
+                    if let Some(waker) = &guard.waker {
+                        let _ = waker.notify();
+                    }
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(_) => break,
@@ -173,6 +240,9 @@ fn spawn_pump<R: Read + Send + 'static>(
             let mut guard = inbox.lock().unwrap_or_else(|e| e.into_inner());
             guard.eof = true;
             running.store(false, Ordering::SeqCst);
+            if let Some(waker) = &guard.waker {
+                let _ = waker.notify();
+            }
         }
     });
 }
@@ -191,9 +261,12 @@ impl EventedReadWrite for Pty {
     type Reader = PtyReader;
     type Writer = PtyWriter;
 
-    unsafe fn register(&mut self, _: &Arc<Poller>, _: Event, _: PollMode) -> io::Result<()> {
-        // A dos filehandle cannot be registered with the poller; the pump
-        // threads are what make output appear.
+    unsafe fn register(&mut self, poller: &Arc<Poller>, _: Event, _: PollMode) -> io::Result<()> {
+        // A dos filehandle cannot be registered with the poller. Keep the
+        // poller anyway, so a pump thread can wake the event loop when the
+        // child says something.
+        self.reader.inbox.lock().unwrap_or_else(|e| e.into_inner()).waker =
+            Some(poller.clone());
         Ok(())
     }
 

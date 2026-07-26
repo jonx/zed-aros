@@ -26,6 +26,10 @@ pub(crate) const READ_BUFFER_SIZE: usize = 0x10_0000;
 /// Max bytes to read from the PTY while the terminal is locked.
 const MAX_LOCKED_READ: usize = u16::MAX as usize;
 
+/// How often the AROS event loop looks at the pty, which it has to poll itself.
+#[cfg(target_os = "aros")]
+const AROS_TICK: std::time::Duration = std::time::Duration::from_millis(8);
+
 /// Messages that may be sent to the `EventLoop`.
 #[derive(Debug)]
 pub enum Msg {
@@ -226,9 +230,15 @@ where
 
             'event_loop: loop {
                 // Wakeup the event loop when a synchronized update timeout was reached.
-                let handler = state.parser.sync_timeout();
-                let timeout =
-                    handler.sync_timeout().map(|st| st.saturating_duration_since(Instant::now()));
+                let sync_deadline = state.parser.sync_timeout().sync_timeout();
+                let timeout = sync_deadline.map(|st| st.saturating_duration_since(Instant::now()));
+
+                // On AROS the pty cannot be polled: an endpoint there is a dos
+                // filehandle, not a descriptor, so `register` has nothing to
+                // hand the poller and `wait` would only ever return on
+                // `notify`. Bound the wait and drive the pty off the tick.
+                #[cfg(target_os = "aros")]
+                let timeout = Some(timeout.map_or(AROS_TICK, |t| t.min(AROS_TICK)));
 
                 events.clear();
                 if let Err(err) = self.poll.wait(&mut events, timeout) {
@@ -241,8 +251,14 @@ where
                     }
                 }
 
-                // Handle synchronized update timeout.
-                if events.is_empty() && self.rx.peek().is_none() {
+                // Handle synchronized update timeout. On AROS every tick looks
+                // idle, so go by the deadline rather than by an empty wait.
+                #[cfg(not(target_os = "aros"))]
+                let sync_timed_out = events.is_empty() && self.rx.peek().is_none();
+                #[cfg(target_os = "aros")]
+                let sync_timed_out = sync_deadline.is_some_and(|st| Instant::now() >= st);
+
+                if sync_timed_out {
                     state.parser.stop_sync(&mut *self.terminal.lock());
                     self.event_proxy.send_event(Event::Wakeup);
                     continue;
@@ -253,7 +269,20 @@ where
                     break;
                 }
 
-                for event in events.iter() {
+                // The events the poller would have produced had it been able to
+                // watch the pty. Both handlers no-op when there is nothing to do.
+                #[cfg(target_os = "aros")]
+                let aros_events = {
+                    let mut rw = PollingEvent::readable(tty::PTY_READ_WRITE_TOKEN);
+                    rw.writable = state.needs_write();
+                    [PollingEvent::readable(tty::PTY_CHILD_EVENT_TOKEN), rw]
+                };
+                #[cfg(target_os = "aros")]
+                let pending = events.iter().chain(aros_events);
+                #[cfg(not(target_os = "aros"))]
+                let pending = events.iter();
+
+                for event in pending {
                     match event.key {
                         tty::PTY_CHILD_EVENT_TOKEN => {
                             if let Some(tty::ChildEvent::Exited(status)) =
