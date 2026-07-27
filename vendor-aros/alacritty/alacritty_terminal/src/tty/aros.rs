@@ -200,9 +200,11 @@ pub fn new(config: &Options, _window_size: WindowSize, _window_id: u64) -> io::R
     if let Some(dir) = &config.working_directory {
         cmd.current_dir(dir);
     }
-    for (k, v) in &config.env {
-        cmd.env(k, v);
-    }
+    // The environment is deliberately not passed on. AROS has no route for it
+    // other than typing `Set` lines at the shell, and each one is a command
+    // like any other: it is read, run, and answered with a fresh prompt, so the
+    // session opens on a stack of them. Nothing on AROS reads the variables an
+    // editor sets (TERM and friends), so the cost is all on the visible side.
 
     trace(format_args!("spawning {program:?} args {args:?} cwd {:?}", config.working_directory));
     let mut child = cmd.spawn()?;
