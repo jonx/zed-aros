@@ -1,0 +1,19 @@
+// Bindings added on AROS, loaded after the default keymap.
+//
+// AROS reads the keyboard through keymap.library, so a binding names whatever
+// character the active layout puts on that key. Several of the defaults sit on
+// keys that move between layouts -- the backquote that opens the terminal is
+// not reachable at all on a French AZERTY keyboard, for instance -- so the ones
+// that matter get an alternative on keys that stay put everywhere.
+//
+// These are additions: the original bindings still work where the layout has
+// the key.
+[
+  {
+    "context": "Workspace",
+    "bindings": {
+      "ctrl-alt-t": "terminal_panel::Toggle",
+      "ctrl-alt-n": "workspace::NewTerminal"
+    }
+  }
+]

@@ -2297,7 +2297,9 @@ pub fn load_default_keymap(cx: &mut App) {
     #[cfg(target_os = "aros")]
     {
         let _ = base_keymap;
-        for path in [DEFAULT_KEYMAP_PATH, VIM_KEYMAP_PATH] {
+        // aros.json last: it adds bindings on keys that stay put whatever the
+        // keyboard layout, for defaults that sit on keys which do not.
+        for path in [DEFAULT_KEYMAP_PATH, VIM_KEYMAP_PATH, "keymaps/aros.json"] {
             match KeymapFile::load_asset_allow_partial_failure(path, cx) {
                 Ok(bindings) => cx.bind_keys(bindings),
                 Err(error) => log::error!("Failed to load keymap {path}: {error}"),
