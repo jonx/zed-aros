@@ -302,7 +302,15 @@ pub fn main() {
 
     zlog::init();
 
-    if stdout_is_a_pty() {
+    // On AROS the console Zed was started from is a terminal, but it is also
+    // behind the editor's own window and cannot be read while the editor runs,
+    // so logging there is logging nowhere. Use the file regardless.
+    #[cfg(target_os = "aros")]
+    let log_to_stdout = false;
+    #[cfg(not(target_os = "aros"))]
+    let log_to_stdout = stdout_is_a_pty();
+
+    if log_to_stdout {
         zlog::init_output_stdout();
     } else {
         let result = zlog::init_output_file(paths::log_file(), Some(paths::old_log_file()));
