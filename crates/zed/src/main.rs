@@ -213,7 +213,28 @@ fn fail_to_open_window(e: anyhow::Error, _cx: &mut App) {
 }
 pub(crate) static STARTUP_TIME: OnceLock<Instant> = OnceLock::new();
 
+/// Append a line to `MacRW:zed-boot.log` when `AROS_ZED_BOOT_TRACE` is set,
+/// for the stretch of startup before logging exists. The ordinary log is at
+/// `SYS:.config/zed/logs/Zed.log`, which on the host is inside the AROS tree
+/// (`bin/darwin-aarch64/AROS/.config/zed/logs/`) and not under any host-shared
+/// directory -- worth knowing, since looking in the wrong one reads as the
+/// editor not logging at all.
+#[cfg(target_os = "aros")]
+fn boot_trace(what: std::fmt::Arguments<'_>) {
+    use std::io::Write;
+    if std::env::var_os("AROS_ZED_BOOT_TRACE").is_none() {
+        return;
+    }
+    if let Ok(mut f) =
+        std::fs::OpenOptions::new().create(true).append(true).open("MacRW:zed-boot.log")
+    {
+        let _ = writeln!(f, "{what}");
+    }
+}
+
 pub fn main() {
+    #[cfg(target_os = "aros")]
+    boot_trace(format_args!("main entered"));
     STARTUP_TIME.get_or_init(|| Instant::now());
 
     #[cfg(unix)]
@@ -294,7 +315,18 @@ pub fn main() {
         }
     }
 
+    #[cfg(target_os = "aros")]
+    boot_trace(format_args!("reached init_paths"));
+
     let file_errors = init_paths();
+
+    #[cfg(target_os = "aros")]
+    boot_trace(format_args!(
+        "init_paths -> {} errors, log file {:?}",
+        file_errors.len(),
+        paths::log_file()
+    ));
+
     if !file_errors.is_empty() {
         files_not_created_on_launch(file_errors);
         return;
@@ -314,6 +346,8 @@ pub fn main() {
         zlog::init_output_stdout();
     } else {
         let result = zlog::init_output_file(paths::log_file(), Some(paths::old_log_file()));
+        #[cfg(target_os = "aros")]
+        boot_trace(format_args!("init_output_file -> {:?}", result.as_ref().err()));
         if let Err(err) = result {
             eprintln!("Could not open log file: {}... Defaulting to stdout", err);
             zlog::init_output_stdout();
