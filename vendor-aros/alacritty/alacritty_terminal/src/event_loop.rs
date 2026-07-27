@@ -30,6 +30,10 @@ const MAX_LOCKED_READ: usize = u16::MAX as usize;
 #[cfg(target_os = "aros")]
 const AROS_TICK: std::time::Duration = std::time::Duration::from_millis(8);
 
+/// Times round the AROS loop, read by the tty layer's trace.
+#[cfg(target_os = "aros")]
+pub static TICKS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 /// Messages that may be sent to the `EventLoop`.
 #[derive(Debug)]
 pub enum Msg {
@@ -267,6 +271,13 @@ where
                 // Handle channel events, if there are any.
                 if !self.drain_recv_channel(&mut state) {
                     break;
+                }
+
+                // How often the loop actually comes round, which is what tells
+                // a stalled tick apart from a stalled read.
+                #[cfg(target_os = "aros")]
+                {
+                    TICKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
 
                 // The events the poller would have produced had it been able to

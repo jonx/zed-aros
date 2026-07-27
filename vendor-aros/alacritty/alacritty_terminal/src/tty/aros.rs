@@ -31,6 +31,7 @@
 
 use std::borrow::Cow;
 use std::collections::VecDeque;
+use std::sync::atomic::AtomicUsize;
 use std::io::{self, Read, Write};
 use std::os::fd::OwnedFd;
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -44,6 +45,26 @@ use crate::tty::{ChildEvent, EventedPty, EventedReadWrite, Options};
 
 pub(crate) const PTY_READ_WRITE_TOKEN: usize = 0;
 pub(crate) const PTY_CHILD_EVENT_TOKEN: usize = 1;
+
+/// Append a line to `MacRW:zed-tty.log`, which is a host file, so the terminal
+/// can be watched from outside while the editor is running. Set AROS_TTY_TRACE
+/// to turn it on; there is nowhere else for a diagnostic to go here, the
+/// editor's own log not reaching disk until it exits.
+fn trace(what: std::fmt::Arguments<'_>) {
+    use std::io::Write;
+    if std::env::var_os("AROS_TTY_TRACE").is_none() {
+        return;
+    }
+    if let Ok(mut f) =
+        std::fs::OpenOptions::new().create(true).append(true).open("MacRW:zed-tty.log")
+    {
+        let _ = writeln!(f, "{what}");
+    }
+}
+
+/// Bytes each side has moved, so a stall says which side stopped.
+static PUMPED: AtomicUsize = AtomicUsize::new(0);
+static DRAINED: AtomicUsize = AtomicUsize::new(0);
 
 // AROS has no POSIX signal masks; a stub so the Options field type resolves.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -87,6 +108,12 @@ impl Read for PtyReader {
         for slot in out.iter_mut().take(n) {
             *slot = inbox.buf.pop_front().expect("checked len");
         }
+        let total = DRAINED.fetch_add(n, Ordering::Relaxed) + n;
+        trace(format_args!(
+            "read {n} ({total} total, {} left, {} ticks)",
+            inbox.buf.len(),
+            crate::event_loop::TICKS.load(Ordering::Relaxed)
+        ));
         Ok(n)
     }
 }
@@ -177,6 +204,7 @@ pub fn new(config: &Options, _window_size: WindowSize, _window_id: u64) -> io::R
         cmd.env(k, v);
     }
 
+    trace(format_args!("spawning {program:?} args {args:?} cwd {:?}", config.working_directory));
     let mut child = cmd.spawn()?;
     let stdin = child.stdin.take().ok_or_else(|| unsupported("terminal has no stdin"))?;
     let stdout = child.stdout.take().ok_or_else(|| unsupported("terminal has no stdout"))?;
@@ -228,9 +256,16 @@ fn spawn_pump<R: Read + Send + 'static>(
                         guard.buf.push_back(b);
                         after_cr = b == b'\r';
                     }
+                    let total = PUMPED.fetch_add(n, Ordering::Relaxed) + n;
+                    let woke = guard.waker.is_some();
                     if let Some(waker) = &guard.waker {
                         let _ = waker.notify();
                     }
+                    trace(format_args!(
+                        "pumped {n} ({total} total, {} queued, woke {woke}, {} ticks)",
+                        guard.buf.len(),
+                        crate::event_loop::TICKS.load(Ordering::Relaxed)
+                    ));
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(_) => break,
@@ -267,6 +302,7 @@ impl EventedReadWrite for Pty {
         // child says something.
         self.reader.inbox.lock().unwrap_or_else(|e| e.into_inner()).waker =
             Some(poller.clone());
+        trace(format_args!("registered"));
         Ok(())
     }
 
