@@ -85,7 +85,11 @@ impl SidebarStatus {
             .and_then(|mw| mw.upgrade())
             .map(|mw| {
                 let mw = mw.read(cx);
-                let enabled = mw.multi_workspace_enabled(cx);
+                // No registered sidebar means nothing to toggle: without this,
+                // the button showed on platforms where the sidebar is gated
+                // off, and a click flipped the open flag on nothing -- doing
+                // nothing visible except hiding the button itself.
+                let enabled = mw.multi_workspace_enabled(cx) && mw.sidebar().is_some();
                 Self {
                     open: mw.sidebar_open() && enabled,
                     side: mw.sidebar_side(cx),

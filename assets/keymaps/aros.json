@@ -1,19 +1,21 @@
 // Bindings added on AROS, loaded after the default keymap.
 //
-// AROS reads the keyboard through keymap.library, so a binding names whatever
-// character the active layout puts on that key. Several of the defaults sit on
-// keys that move between layouts -- the backquote that opens the terminal is
-// not reachable at all on a French AZERTY keyboard, for instance -- so the ones
-// that matter get an alternative on keys that stay put everywhere.
+// Two reasons these exist. AROS reads the keyboard through keymap.library, so a
+// binding names whatever character the active layout puts on that key, and the
+// backquote that opens the terminal is not reachable at all on a French AZERTY
+// keyboard. And AROS loads the Linux keymap, which is entirely ctrl-based, so
+// the Command key -- which is what a Mac keyboard has where a PC has nothing
+// useful -- is not bound to anything at all.
 //
-// These are additions: the original bindings still work where the layout has
-// the key.
+// So the alternatives go on Command, where they collide with nothing and land
+// under the thumb that expects them. These are additions: the originals still
+// work wherever the layout has the key.
 [
   {
     "context": "Workspace",
     "bindings": {
-      "ctrl-alt-t": "terminal_panel::Toggle",
-      "ctrl-alt-n": "workspace::NewTerminal"
+      "cmd-j": "terminal_panel::Toggle",
+      "cmd-shift-j": "workspace::NewTerminal"
     }
   }
 ]

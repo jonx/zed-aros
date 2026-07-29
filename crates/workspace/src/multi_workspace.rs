@@ -416,6 +416,12 @@ impl MultiWorkspace {
         if !self.multi_workspace_enabled(cx) {
             return;
         }
+        // Nothing registered, nothing to toggle. Flipping the flag anyway put
+        // the workspace into "sidebar open" with no sidebar, which reachable
+        // keybindings and the palette action could still do.
+        if self.sidebar.is_none() {
+            return;
+        }
 
         if self.sidebar_open() {
             self.close_sidebar(window, cx);
