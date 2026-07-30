@@ -744,7 +744,10 @@ impl GlobalWatcher {
         // from), while this delivers per-directory events in ~250 ms.
         #[cfg(target_os = "aros")]
         {
-            let watcher = crate::aros_watcher::ArosKqueueWatcher::new(handle_native_event)?;
+            let watcher = <crate::aros_watcher::ArosKqueueWatcher as notify::Watcher>::new(
+                handle_native_event,
+                notify::Config::default(),
+            )?;
             *self.native_watcher.lock() = Some(Box::new(watcher));
             return Ok(());
         }

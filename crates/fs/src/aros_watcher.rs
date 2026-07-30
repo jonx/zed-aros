@@ -19,7 +19,7 @@
 //! reports itself as such (`requires_kqueue_fallback`), which routes it to the
 //! poll watcher upfront.
 
-use notify::{Event, EventHandler, EventKind, RecursiveMode, Watcher, WatcherKind};
+use notify::{Config, Event, EventHandler, EventKind, RecursiveMode, Watcher, WatcherKind};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::ffi::CString;
@@ -95,7 +95,7 @@ pub struct ArosKqueueWatcher {
 }
 
 impl ArosKqueueWatcher {
-    pub fn new<H: EventHandler>(handler: H) -> notify::Result<Self> {
+    fn build<H: EventHandler>(handler: H) -> notify::Result<Self> {
         if unsafe { aros_fsw_init() } != 0 {
             return Err(notify::Error::generic(
                 "host kqueue unavailable (no hostlib, or not a darwin host)",
@@ -154,6 +154,10 @@ impl Shared {
 }
 
 impl Watcher for ArosKqueueWatcher {
+    fn new<H: EventHandler>(handler: H, _config: Config) -> notify::Result<Self> {
+        Self::build(handler)
+    }
+
     fn watch(&mut self, path: &Path, _mode: RecursiveMode) -> notify::Result<()> {
         let host = to_host_path(path).ok_or_else(|| {
             notify::Error::generic(&format!("no host mapping for {}", path.display()))
