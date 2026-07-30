@@ -35,6 +35,7 @@ use std::sync::atomic::AtomicUsize;
 use std::io::{self, Read, Write};
 use std::os::fd::OwnedFd;
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::Mutex as StdMutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -128,10 +129,28 @@ impl Read for PtyReader {
 pub struct PtyWriter {
     stdin: ChildStdin,
     inbox: Arc<Mutex<Inbox>>,
+    /// For the interrupt key: ^C is delivered as a break signal to the child,
+    /// not as a byte -- with no tty, nobody else would ever turn one into the
+    /// other. Shared with `Pty`, whose exit polling also needs the child.
+    child: Arc<StdMutex<Child>>,
 }
 
 impl Write for PtyWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // The interrupt key. On a real tty the line discipline turns ^C into a
+        // signal; here that is this line. The byte is consumed, not forwarded:
+        // the shell would read it as ordinary input.
+        if buf.contains(&0x03) {
+            if let Ok(mut child) = self.child.lock() {
+                let _ = child.kill(); // the Amiga break request
+            }
+            let rest: Vec<u8> = buf.iter().copied().filter(|&b| b != 0x03).collect();
+            if rest.is_empty() {
+                return Ok(buf.len());
+            }
+            self.write_all(&rest)?;
+            return Ok(buf.len());
+        }
         let line_ends = buf.iter().any(|&b| b == b'\r');
         let translated: Cow<'_, [u8]> = if line_ends {
             Cow::Owned(buf.iter().map(|&b| if b == b'\r' { b'\n' } else { b }).collect())
@@ -163,7 +182,7 @@ impl Write for PtyWriter {
 }
 
 pub struct Pty {
-    child: Child,
+    child: Arc<StdMutex<Child>>,
     reader: PtyReader,
     writer: PtyWriter,
     /// So the exit is reported exactly once.
@@ -211,6 +230,7 @@ pub fn new(config: &Options, _window_size: WindowSize, _window_id: u64) -> io::R
     let stdin = child.stdin.take().ok_or_else(|| unsupported("terminal has no stdin"))?;
     let stdout = child.stdout.take().ok_or_else(|| unsupported("terminal has no stdout"))?;
     let stderr = child.stderr.take();
+    let child = Arc::new(StdMutex::new(child));
 
     let inbox: Arc<Mutex<Inbox>> = Arc::default();
     let running = Arc::new(AtomicBool::new(true));
@@ -221,9 +241,9 @@ pub fn new(config: &Options, _window_size: WindowSize, _window_id: u64) -> io::R
     }
 
     Ok(Pty {
-        child,
+        child: child.clone(),
         reader: PtyReader { inbox: inbox.clone() },
-        writer: PtyWriter { stdin, inbox },
+        writer: PtyWriter { stdin, inbox, child },
         reported_exit: false,
         running,
     })
@@ -330,7 +350,10 @@ impl EventedPty for Pty {
         if self.reported_exit {
             return None;
         }
-        match self.child.try_wait() {
+        let Ok(mut child) = self.child.lock() else {
+            return None;
+        };
+        match child.try_wait() {
             Ok(Some(status)) => {
                 self.reported_exit = true;
                 Some(ChildEvent::Exited(Some(status)))
