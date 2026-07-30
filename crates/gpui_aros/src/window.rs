@@ -685,7 +685,10 @@ impl PlatformWindow for ArosWindow {
 
     fn set_title(&mut self, title: &str) {
         let handle = self.inner.state.borrow().handle;
-        if let Ok(c_title) = CString::new(title) {
+        // Intuition reads a title as Latin-1, so UTF-8 has to be folded first:
+        // the em-dash Zed puts between project and filename is three bytes,
+        // and arrived in the title bar as three stray glyphs.
+        if let Ok(c_title) = CString::new(crate::input::to_latin1_lossy(title)) {
             // SAFETY: valid handle; glue copies the string.
             unsafe { glue::gpa_set_title(handle, c_title.as_ptr()) };
         }

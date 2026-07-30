@@ -333,6 +333,18 @@ fn qualifier_bits_map_to_gpui_modifiers() {
 }
 
 #[test]
+fn window_titles_fold_to_latin1() {
+    use crate::input::to_latin1_lossy;
+    // The editor's own title shape: project, em-dash, filename.
+    assert_eq!(to_latin1_lossy("MacRW:lsptest \u{2014} a3.txt"), b"MacRW:lsptest - a3.txt");
+    // Latin-1 survives 1:1; unmappable characters go rather than arrive as
+    // their raw UTF-8 bytes.
+    assert_eq!(to_latin1_lossy("caf\u{e9}"), vec![b'c', b'a', b'f', 0xE9]);
+    assert_eq!(to_latin1_lossy("a\u{4e2d}b"), b"ab");
+    assert_eq!(to_latin1_lossy("x\u{2026}"), b"x...");
+}
+
+#[test]
 fn latin1_decodes_and_stops_at_nul() {
     use crate::input::latin1_to_string;
     assert_eq!(latin1_to_string(b"ab\0zz").as_deref(), Some("ab"));

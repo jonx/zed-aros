@@ -63,6 +63,29 @@ pub fn latin1_to_string(bytes: &[u8]) -> Option<String> {
     Some(bytes[..len].iter().map(|&b| b as char).collect())
 }
 
+/// UTF-8 down to the Latin-1 bytes Intuition displays.
+///
+/// The typographic characters an editor puts in a title -- em-dash, curly
+/// quotes, ellipsis -- have no Latin-1 equivalent and would otherwise arrive as
+/// their raw UTF-8 bytes, one stray glyph each. Fold the common ones to ASCII,
+/// pass through what Latin-1 can represent, and drop the rest.
+pub fn to_latin1_lossy(s: &str) -> Vec<u8> {
+    let mut out = Vec::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '\u{2014}' | '\u{2013}' => out.push(b'-'),   // em-dash, en-dash
+            '\u{2018}' | '\u{2019}' => out.push(b'\''),  // curly single quotes
+            '\u{201C}' | '\u{201D}' => out.push(b'"'),   // curly double quotes
+            '\u{2026}' => out.extend_from_slice(b"..."),  // ellipsis
+            '\u{2197}' => out.extend_from_slice(b"(shared)"),
+            '\u{2199}' => out.extend_from_slice(b"(collab)"),
+            c if (c as u32) < 0x100 => out.push(c as u8),
+            _ => {}
+        }
+    }
+    out
+}
+
 /// The GPUI keybinding name for a rawkey code: named keys from the (stable
 /// Amiga) code table, everything else from the keymap's unmodified
 /// translation — so a French layout's `a` binds as "a" even though the code
