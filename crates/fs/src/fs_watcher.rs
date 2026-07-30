@@ -173,7 +173,14 @@ pub fn requires_poll_watcher(path: &Path) -> bool {
         return detect_requires_poll_watcher_linux(path);
     }
 
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "aros")]
+    {
+        // Only paths on host-mapped volumes can be watched through the host's
+        // kqueue; the rest keep the poll watcher.
+        return crate::aros_watcher::requires_kqueue_fallback(path);
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "aros")))]
     {
         let _ = path;
         false
@@ -731,11 +738,26 @@ impl GlobalWatcher {
         // file read in a watched directory would queue events, increasing the
         // risk of queue overflows (and thus full rescans) under read-heavy
         // workloads like grep or language server indexing.
-        let config = notify::Config::default().with_event_kinds(notify::EventKindMask::CORE);
-        let watcher =
-            <notify::RecommendedWatcher as notify::Watcher>::new(handle_native_event, config)?;
-        *self.native_watcher.lock() = Some(Box::new(watcher));
-        Ok(())
+        // On AROS "native" means the host's kqueue reached through the C glue:
+        // notify's RecommendedWatcher would be its poll watcher there (at its
+        // own default interval, which is where the old 30 s latency came
+        // from), while this delivers per-directory events in ~250 ms.
+        #[cfg(target_os = "aros")]
+        {
+            let watcher = crate::aros_watcher::ArosKqueueWatcher::new(handle_native_event)?;
+            *self.native_watcher.lock() = Some(Box::new(watcher));
+            return Ok(());
+        }
+
+        #[cfg(not(target_os = "aros"))]
+        {
+            let config =
+                notify::Config::default().with_event_kinds(notify::EventKindMask::CORE);
+            let watcher =
+                <notify::RecommendedWatcher as notify::Watcher>::new(handle_native_event, config)?;
+            *self.native_watcher.lock() = Some(Box::new(watcher));
+            Ok(())
+        }
     }
 
     fn ensure_poll_watcher(&self) -> anyhow::Result<()> {

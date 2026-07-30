@@ -1,4 +1,6 @@
 pub mod fs_watcher;
+#[cfg(target_os = "aros")]
+mod aros_watcher;
 
 pub use fs_watcher::requires_poll_watcher;
 
