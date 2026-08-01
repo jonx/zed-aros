@@ -29,7 +29,10 @@ crossbeam-channel = "0.5"
 futures.workspace = true
 log.workspace = true
 smallvec.workspace = true
-util.workspace = true
+# Pure helpers only — this crate uses no `util::` item that needs the smol
+# `process` half, and taking the default would unify the async-io reactor back
+# into an embedder's graph (see the root manifest's http_client note).
+util = { path = "../util", default-features = false }
 uuid.workspace = true
 raw-window-handle = "0.6"
 

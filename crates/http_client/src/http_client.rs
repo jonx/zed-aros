@@ -1,7 +1,10 @@
 mod async_body;
 #[cfg(not(target_family = "wasm"))]
 pub mod github;
-#[cfg(not(target_family = "wasm"))]
+// Behind a default-on feature: its `async-tar` + `util::archive` deps are the
+// only thing pulling the async-io reactor into this crate's graph, and gpui
+// takes http_client with default-features = false. See Cargo.toml.
+#[cfg(all(not(target_family = "wasm"), feature = "github-download"))]
 pub mod github_download;
 
 pub use anyhow::{Result, anyhow};

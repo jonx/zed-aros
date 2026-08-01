@@ -15,6 +15,15 @@ path = "src/util.rs"
 doctest = true
 
 [features]
+default = ["process"]
+# Host subprocesses + archive extraction: the `archive`, `command`, `process`,
+# `shell_env` and `shell_builder` modules, which run on `smol` and therefore
+# pull the async-io reactor. On by default, so every zed crate keeps them
+# without touching its manifest. Off for embedders that only want util's pure
+# helpers — notably gpui, whose `http_client` dep takes `default-features =
+# false`; that keeps the reactor out of a downstream app's graph entirely
+# (it was dragging ~20 vendor-aros crates into Ferail's AROS build).
+process = ["dep:smol"]
 test-support = ["rand", "util_macros"]
 
 [dependencies]
@@ -46,9 +55,11 @@ gpui_util.workspace = true
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
 async-fs.workspace = true
 walkdir.workspace = true
-# `smol` (the async-io reactor stack) now compiles on AROS, so the `command`
-# module can use it there.
-smol.workspace = true
+# `smol` pulls the whole async-io reactor (polling -> rustix -> errno). It
+# compiles on AROS now via vendor-aros, and zed wants it, but it is optional so
+# an embedder that only needs gpui can leave it out entirely — see the
+# `process` feature.
+smol = { workspace = true, optional = true }
 
 # `dirs`/`which` assume a unix/windows model and don't exist on AROS. Their only
 # callers are the process/archive/shell modules (gated off in util.rs for aros)

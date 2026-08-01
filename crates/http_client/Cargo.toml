@@ -10,6 +10,14 @@ description = "A HTTP client library for Zed and GPUI"
 workspace = true
 
 [features]
+default = ["github-download"]
+# Downloading + extracting GitHub release archives (the `github_download`
+# module). It is the only user of `async-tar` and of util's archive helpers,
+# and through them of the async-io reactor, so it is a feature rather than
+# unconditional: gpui takes this crate with `default-features = false`, which
+# keeps that whole stack out of an embedder's graph. Every zed crate that
+# depends on http_client directly still gets it by default.
+github-download = ["dep:async-tar", "util/process"]
 test-support = []
 
 [lib]
@@ -32,8 +40,13 @@ serde_urlencoded.workspace = true
 url.workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-util.workspace = true
+# Pure helpers only; the `github-download` feature turns util's `process` half
+# back on when it is enabled. Spelled out rather than inherited from the
+# workspace because cargo forbids a member from overriding an inherited
+# `default-features`, and flipping it workspace-wide would strip the process
+# modules from all 31 crates that use them.
+util = { path = "../util", default-features = false }
 async-fs.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
-async-tar.workspace = true
+async-tar = { workspace = true, optional = true }

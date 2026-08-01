@@ -361,7 +361,14 @@ gpui_windows = { path = "crates/gpui_windows", default-features = false }
 gpui_tokio = { path = "crates/gpui_tokio" }
 gpui_util = { path = "crates/gpui_util" }
 html_to_markdown = { path = "crates/html_to_markdown" }
-http_client = { path = "crates/http_client" }
+# default-features = false: `github_download` (async-tar + util's smol/async-io
+# half) is opt-in, so an embedder that takes gpui alone does not inherit a
+# reactor it never calls — on AROS that stack costs ~20 vendored crates. The
+# crates that actually download GitHub releases (languages, project) ask for
+# `features = ["github-download"]`, and feature unification gives it to the
+# whole build. A member cannot override an inherited `default-features`, which
+# is why this is set here rather than on gpui's dependency line.
+http_client = { path = "crates/http_client", default-features = false }
 http_client_tls = { path = "crates/http_client_tls" }
 icons = { path = "crates/icons" }
 image_viewer = { path = "crates/image_viewer" }
