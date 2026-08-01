@@ -54,11 +54,16 @@ Run on booted AROS via `graft/aros-ctl` (see `gpui_aros_smoke`):
       a debug-info ET_REL takes minutes to relocate; and never boot with
       a `-DDEBUG` dos.library for real runs (it logs every packet).
 - [ ] Clipboard round-trip (`aros-ctl cmdc/cmdv` once wired).
-- [ ] **Window resize** via the size gadget: `graft/resize-smoke` proves
-      the drag recipe on the boot CLI window (grab the gadget, MULTIPLE
-      intermediate `mouse` moves while held); driving an app window's
-      gadget by injected coordinates was inconclusive on 2026-07-04 —
-      needs precise frame coords or a programmatic `gpa_set_size`.
+- [x] **Window resize** via the size gadget: works end-to-end on a real app
+      window (Ferail, 2026-08-01) — drag resizes, the framebuffer is
+      reallocated and the layout reflows, no wedge. Two things the earlier
+      "inconclusive on 2026-07-04" attempt was missing: the window needs
+      `WA_MinWidth`/`WA_MaxWidth` or Intuition pins min = max = the opening
+      size and the gadget cannot move (fixed in 85b08a3446), and the injected
+      drag must target the gadget within a pixel or two — it sits in the
+      bottom-right *frame* corner, outside the client area, so a press one
+      pixel inside goes to the app instead. Recipe: `mouse X Y`,
+      `button 0 1 X Y`, MULTIPLE intermediate `mouse` moves, `button 0 0`.
 - [ ] **Scroll wheel**: not injectable today — cocoametal's control
       protocol has no wheel event (CM_EV_*), so NewMouse rawkeys
       (0x7A-0x7D) never fire under automation. Host-side, the mapping

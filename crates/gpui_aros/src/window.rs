@@ -517,15 +517,19 @@ impl ArosWindowInner {
             width: px(w as f32),
             height: px(h as f32),
         };
-        {
+        let render_scale = {
             let mut state = self.state.borrow_mut();
             state.bounds.size = size;
             let dev = scaled_device_size(w, h, state.render_scale);
             state.renderer.update_drawable_size(dev);
-        }
+            state.render_scale
+        };
         let taken = self.callbacks.borrow_mut().resize.take();
         if let Some(mut f) = taken {
-            f(size, 1.0);
+            // Report the same factor `scale_factor()` returns — hard-coding
+            // 1.0 here made the first resize tell GPUI the drawable was
+            // 1:1 even in dynamic-resolution mode (render_scale < 1.0).
+            f(size, render_scale);
             self.callbacks.borrow_mut().resize = Some(f);
         }
     }

@@ -89,7 +89,10 @@ Prioritised for a new owner:
    `Ok(None)`. Wire to `asl.library` (`AslRequest`, file + dir modes).
 3. **Cursor** — `set_cursor_style` no-op. Map `CursorStyle` → Intuition pointer
    (`SetWindowPointer` / a sprite set).
-4. **`open_url`** no-op; window **resize** is best-effort no-op.
+4. **`open_url`** no-op. Window **resize** is fully wired: the size gadget
+   drives IDCMP_NEWSIZE → `handle_resize`, and `PlatformWindow::resize` calls
+   `gpa_set_size`. (This line used to say resize was a best-effort no-op; that
+   has been stale since the native-shell work.)
 5. **Renderer tail** — pattern fills (slash/checkerboard), per-edge border
    widths, sprite rotation (`transformation`), `Surfaces` (video). All rare in
    chrome; grep `TODO` in `renderer.rs`.
