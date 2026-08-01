@@ -151,6 +151,26 @@ impl Platform for ArosPlatform {
                 unsafe { crate::glue::gpa_wait_timeout_ms(mask, remaining) };
             }
         }
+
+        // Hand control back to GPUI so it can shut down: the callback
+        // installed by `App` runs the `on_app_quit` observers, clears the
+        // windows and flushes effects. Without this the whole shutdown phase
+        // was skipped on AROS — quit observers never fired (so apps never got
+        // their save-on-quit), windows were never torn down, and any entity
+        // handle an observer would have released was still alive when `App`
+        // dropped, which is what tripped GPUI's leak detector on exit.
+        //
+        // It runs *here*, at the end of the loop, rather than in `quit()`:
+        // `App::quit` calls `Platform::quit` with the app state already
+        // borrowed, and shutdown re-enters to run the observers, so calling
+        // it there would double-borrow. macOS sidesteps the same trap by
+        // deferring termination to a later run-loop turn; we defer to the end
+        // of ours. Taking the callback out of the `RefCell` first keeps it
+        // free to re-enter platform methods (closing windows does).
+        let on_quit = self.callbacks.borrow_mut().quit.take();
+        if let Some(mut on_quit) = on_quit {
+            on_quit();
+        }
     }
 
     fn quit(&self) {

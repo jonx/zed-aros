@@ -54,6 +54,17 @@ Run on booted AROS via `graft/aros-ctl` (see `gpui_aros_smoke`):
       a debug-info ET_REL takes minutes to relocate; and never boot with
       a `-DDEBUG` dos.library for real runs (it logs every packet).
 - [ ] Clipboard round-trip (`aros-ctl cmdc/cmdv` once wired).
+- [x] **Shutdown**: `Platform::quit` must end by invoking the callback
+      installed via `on_quit` — that is what runs `App::shutdown`, and with it
+      the `on_app_quit` observers, the window teardown and the effect flush.
+      Setting a quit flag alone silently skips the entire shutdown phase: apps
+      lose their save-on-quit, and any entity handle an observer would have
+      released is still alive when `App` drops, which trips GPUI's leak
+      detector (`Exited with leaked handles`). Call it at the *end of the run
+      loop*, not from `quit()`: `App::quit` calls `Platform::quit` with the app
+      state borrowed and shutdown re-enters, so calling it there
+      double-borrows. macOS defers to a later run-loop turn for the same
+      reason. Fixed 2026-08-01.
 - [x] **Window resize** via the size gadget: works end-to-end on a real app
       window (Ferail, 2026-08-01) — drag resizes, the framebuffer is
       reallocated and the layout reflows, no wedge. Two things the earlier
