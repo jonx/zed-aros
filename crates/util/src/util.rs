@@ -358,7 +358,9 @@ pub fn get_zed_cli_path() -> Result<PathBuf> {
         })
 }
 
-#[cfg(unix)]
+// Captures the login shell's environment by running it — so it belongs to the
+// same `process` group as the modules it calls into.
+#[cfg(all(unix, feature = "process"))]
 pub async fn load_login_shell_environment() -> Result<()> {
     use anyhow::Context as _;
 
