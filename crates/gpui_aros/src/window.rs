@@ -55,6 +55,9 @@ struct ArosWindowState {
     modifiers: Modifiers,
     capslock: Capslock,
     pressed_button: Option<MouseButton>,
+    /// Whether the right button is currently routed to us rather than to
+    /// Intuition's menu strip (see `apply_rmb_trap`).
+    rmb_trap: bool,
     /// Multi-click synthesis (double-click open, triple-click select):
     /// Intuition reports raw button events with no click chaining, so we
     /// track (button, when, where, count) ourselves — same button within
@@ -144,6 +147,7 @@ impl ArosWindow {
             modifiers: Modifiers::default(),
             capslock: Capslock::default(),
             pressed_button: None,
+            rmb_trap: false,
             last_click: None,
             closed: false,
         };
@@ -273,6 +277,9 @@ impl ArosWindowInner {
                         _ => 1,
                     }
                 };
+                // A clear deferred by `apply_rmb_trap` (Ctrl released while
+                // the button was still down) applies now that it is up.
+                self.apply_rmb_trap(modifiers.control);
                 self.fire_input(PlatformInput::MouseUp(MouseUpEvent {
                     button,
                     position,
@@ -358,6 +365,38 @@ impl ArosWindowInner {
     /// key) latched ctrl/shift onto every later click: single clicks
     /// multi-selected, Esc arrived as ctrl-Esc, typed chars were
     /// suppressed. Fires ModifiersChanged exactly once per transition.
+    /// Route the right button to us while Ctrl is held, so a Ctrl+right-click
+    /// reaches the app as an ordinary `MouseButton::Right` press and opens the
+    /// context menu — on every other platform that is just a right-click.
+    ///
+    /// Plain right-click has to keep working as Intuition's menu gesture: on
+    /// AmigaOS the right button *is* the menu button, and the window carries a
+    /// real menu strip. Intuition decides between the two per input event, by
+    /// reading `WFLG_RMBTRAP` from the window struct itself, so arming the flag
+    /// only while Ctrl is down gives us both behaviours.
+    ///
+    /// Clearing is deferred while a button is down: dropping the flag between a
+    /// press and its release would send the `MENUUP` to Intuition instead of to
+    /// us, leaving gpui with a button it thinks is still held.
+    fn apply_rmb_trap(&self, want: bool) {
+        let (handle, apply) = {
+            let mut state = self.state.borrow_mut();
+            if state.rmb_trap == want {
+                return;
+            }
+            if !want && state.pressed_button.is_some() {
+                // Re-evaluated on the next modifier change after the release.
+                return;
+            }
+            state.rmb_trap = want;
+            (state.handle, true)
+        };
+        if apply && !handle.is_null() {
+            // SAFETY: valid handle; the glue guards its own window pointer.
+            unsafe { glue::gpa_set_rmb_trap(handle, want as c_int) };
+        }
+    }
+
     fn sync_modifiers(&self, qualifier: c_int) -> Modifiers {
         let modifiers = modifiers_from_qualifier(qualifier);
         let capslock = Capslock {
@@ -371,6 +410,7 @@ impl ArosWindowInner {
             changed
         };
         if changed {
+            self.apply_rmb_trap(modifiers.control);
             self.fire_input(PlatformInput::ModifiersChanged(ModifiersChangedEvent {
                 modifiers,
                 capslock,

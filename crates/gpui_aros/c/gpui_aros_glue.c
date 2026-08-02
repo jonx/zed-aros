@@ -606,6 +606,32 @@ void gpa_inner_size(void *handle, int *out_w, int *out_h)
         *out_h = height;
 }
 
+/* Route the right mouse button to the app instead of Intuition's menus.
+ *
+ * Intuition decides per input event whether the right button opens the window's
+ * menu strip or is delivered as MENUDOWN/MENUUP, and it decides purely on
+ * WFLG_RMBTRAP in the window (rom/intuition/inputhandler.c reads
+ * `w->Flags & WFLG_RMBTRAP` on the event itself, not at OpenWindow time). So
+ * flipping the bit while a qualifier is held is enough to get context-menu
+ * clicks without giving up the native menu strip.
+ *
+ * AROS has no SetWindowAttrs()/WA_RMBTrap, so the bit is written directly --
+ * the same thing Amiga applications have always done. Forbid() keeps the
+ * read-modify-write away from the input handler. */
+void gpa_set_rmb_trap(void *handle, int on)
+{
+    GpaWindow *w = handle;
+    if (!w || !w->win)
+        return;
+
+    Forbid();
+    if (on)
+        w->win->Flags |= WFLG_RMBTRAP;
+    else
+        w->win->Flags &= ~WFLG_RMBTRAP;
+    Permit();
+}
+
 void gpa_set_title(void *handle, const char *title)
 {
     GpaWindow *w = handle;

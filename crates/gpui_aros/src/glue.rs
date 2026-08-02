@@ -71,6 +71,11 @@ unsafe extern "C" {
 
     pub(crate) fn gpa_set_title(handle: *mut c_void, title: *const c_char);
 
+    /// Route the right button to the app (`on != 0`) instead of Intuition's
+    /// menu strip. Intuition consults `WFLG_RMBTRAP` per input event, so this
+    /// can be toggled while a qualifier is held — see the C side.
+    pub(crate) fn gpa_set_rmb_trap(handle: *mut c_void, on: c_int);
+
     pub(crate) fn gpa_screen_size(out_w: *mut c_int, out_h: *mut c_int) -> c_int;
 
     /// Record the main task + allocate the wake signal. Main thread, once,
